@@ -1,9 +1,13 @@
-use avantis_protocol::{backup_show, usb_show_directory, BackupRequest};
+use avantis_protocol::{
+    backup_show, backup_shows, list_stored_shows, usb_show_directory, BackupBatchRequest,
+    BackupRequest,
+};
 use std::{
     fs,
     io::{Read, Write},
     net::{TcpListener, TcpStream, UdpSocket},
     path::PathBuf,
+    sync::atomic::{AtomicU64, Ordering},
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -11,6 +15,7 @@ use std::{
 const LOCAL_CLIENT_OBJECT: u16 = 0x7FFE;
 const SERVER_SHOW_MANAGER: u16 = 0x2201;
 const SERVER_FILE_SENDER: u16 = 0x2202;
+static TEMP_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Debug)]
 struct Msg {
@@ -73,7 +78,48 @@ fn backs_up_compatibility_location_after_catalogue_settles() {
     let _ = fs::remove_dir_all(base);
 }
 
-fn mock_console(listener: TcpListener, show_location: u8) {
+#[test]
+fn lists_only_stored_user_shows_and_prefers_the_native_location() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = thread::spawn(move || mock_console_catalogue(listener));
+
+    let shows = list_stored_shows(&format!("127.0.0.1:{port}")).unwrap();
+
+    assert_eq!(
+        shows.into_iter().map(|show| show.name).collect::<Vec<_>>(),
+        vec!["Festival", "Sunday"]
+    );
+    server.join().unwrap();
+}
+
+#[test]
+fn backs_up_multiple_selected_shows_in_one_session() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = thread::spawn(move || mock_console_batch(listener));
+
+    let base = temp_dir();
+    fs::create_dir_all(&base).unwrap();
+    let outcome = backup_shows(&BackupBatchRequest {
+        endpoint: format!("127.0.0.1:{port}"),
+        show_names: vec!["Sunday".into(), "festival".into(), "SUNDAY".into()],
+        destination: base.clone(),
+    })
+    .unwrap();
+
+    assert_eq!(outcome.files.len(), 2);
+    assert_eq!(outcome.files[0].show_name, "Sunday");
+    assert_eq!(outcome.files[1].show_name, "Festival");
+    for file in &outcome.files {
+        assert_eq!(fs::read(&file.path).unwrap(), fixture_archive());
+    }
+
+    server.join().unwrap();
+    let _ = fs::remove_dir_all(base);
+}
+
+fn connect_console(listener: TcpListener) -> TcpStream {
     let udp = UdpSocket::bind("127.0.0.1:0").unwrap();
     let udp_port = udp.local_addr().unwrap().port();
     let (mut stream, _) = listener.accept().unwrap();
@@ -106,13 +152,92 @@ fn mock_console(listener: TcpListener, show_location: u8) {
             payload: (SERVER_SHOW_MANAGER as u32).to_be_bytes().to_vec(),
         },
     );
+    stream
+}
 
-    let sync = decode_net(&read_frame(&mut stream));
+fn sync_catalogue(stream: &mut TcpStream, messages: impl IntoIterator<Item = Msg>) {
+    let sync = decode_net(&read_frame(stream));
     assert_eq!(sync.function, 0x100);
     assert_eq!(sync.target, SERVER_SHOW_MANAGER);
+    for message in messages {
+        write_net(stream, message);
+    }
+}
 
-    write_net(&mut stream, show_added("Factory", 0));
-    write_net(&mut stream, show_added("Sunday", show_location));
+fn mock_console_catalogue(listener: TcpListener) {
+    let mut stream = connect_console(listener);
+    sync_catalogue(
+        &mut stream,
+        [
+            show_added("Factory", 0),
+            show_added("On USB", 1),
+            show_added("Sunday", 2),
+            show_added("Festival", 4),
+            show_added("Sunday", 4),
+        ],
+    );
+    thread::sleep(Duration::from_millis(400));
+}
+
+fn mock_console_batch(listener: TcpListener) {
+    let mut stream = connect_console(listener);
+    sync_catalogue(
+        &mut stream,
+        [
+            show_added("Factory", 0),
+            show_added("Sunday", 4),
+            show_added("Festival", 4),
+        ],
+    );
+
+    for expected_name in ["Sunday", "Festival"] {
+        let request = decode_net(&read_frame(&mut stream));
+        assert_eq!(request.function, 0x118);
+        assert_eq!(request.target, SERVER_SHOW_MANAGER);
+        assert_eq!(cstring(&request.payload[..16]), expected_name);
+        send_archive(&mut stream, expected_name);
+    }
+}
+
+fn send_archive(stream: &mut TcpStream, show_name: &str) {
+    let archive = fixture_archive();
+    let name = format!("{show_name}.tar.gz\0");
+    let header_len = 8 + name.len();
+    let split = 12usize;
+    let mut header = Vec::new();
+    header.extend_from_slice(&(header_len as u16).to_be_bytes());
+    header.extend_from_slice(&2u16.to_be_bytes());
+    header.extend_from_slice(&(archive.len() as u32).to_be_bytes());
+    header.extend_from_slice(name.as_bytes());
+    header.extend_from_slice(&archive[..split]);
+    write_net(stream, file_msg(0x113, header));
+    let ack1 = decode_net(&read_frame(stream));
+    assert_eq!(ack1.function, 2);
+    assert_eq!(ack1.target, SERVER_FILE_SENDER);
+
+    write_net(stream, file_msg(0x112, archive[split..].to_vec()));
+    let ack2 = decode_net(&read_frame(stream));
+    assert_eq!(ack2.function, 2);
+    assert_eq!(ack2.target, SERVER_FILE_SENDER);
+}
+
+fn cstring(bytes: &[u8]) -> String {
+    let end = bytes
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(bytes.len());
+    String::from_utf8_lossy(&bytes[..end]).into_owned()
+}
+
+fn mock_console(listener: TcpListener, show_location: u8) {
+    let mut stream = connect_console(listener);
+    sync_catalogue(
+        &mut stream,
+        [
+            show_added("Factory", 0),
+            show_added("Sunday", show_location),
+        ],
+    );
 
     let request = decode_net(&read_frame(&mut stream));
     assert_eq!(request.function, 0x118);
@@ -120,25 +245,7 @@ fn mock_console(listener: TcpListener, show_location: u8) {
     assert_eq!(request.payload[17], show_location);
     assert_eq!(request.payload[41], 0);
 
-    let archive = fixture_archive();
-    let name = b"Sunday.tar.gz\0";
-    let header_len = 8 + name.len();
-    let split = 12usize;
-    let mut header = Vec::new();
-    header.extend_from_slice(&(header_len as u16).to_be_bytes());
-    header.extend_from_slice(&2u16.to_be_bytes());
-    header.extend_from_slice(&(archive.len() as u32).to_be_bytes());
-    header.extend_from_slice(name);
-    header.extend_from_slice(&archive[..split]);
-    write_net(&mut stream, file_msg(0x113, header));
-    let ack1 = decode_net(&read_frame(&mut stream));
-    assert_eq!(ack1.function, 2);
-    assert_eq!(ack1.target, SERVER_FILE_SENDER);
-
-    write_net(&mut stream, file_msg(0x112, archive[split..].to_vec()));
-    let ack2 = decode_net(&read_frame(&mut stream));
-    assert_eq!(ack2.function, 2);
-    assert_eq!(ack2.target, SERVER_FILE_SENDER);
+    send_archive(&mut stream, "Sunday");
 }
 
 fn show_added(name: &str, location: u8) -> Msg {
@@ -245,5 +352,9 @@ fn temp_dir() -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    std::env::temp_dir().join(format!("stage-backup-test-{}-{unique}", std::process::id()))
+    let sequence = TEMP_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!(
+        "stage-backup-test-{}-{unique}-{sequence}",
+        std::process::id()
+    ))
 }

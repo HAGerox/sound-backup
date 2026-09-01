@@ -3,13 +3,16 @@ mod filename;
 mod show;
 mod wire;
 
-pub use client::{backup_show, test_connection, BackupOutcome, BackupRequest};
+pub use client::{
+    backup_show, backup_shows, list_stored_shows, test_connection, BackupBatchOutcome,
+    BackupBatchRequest, BackupOutcome, BackupRequest, StoredShow,
+};
 pub use filename::{
     dated_archive_name, sanitise_archive_stem, usb_show_directory, AVANTIS_USB_ROOT,
     AVANTIS_USB_SHOWS,
 };
 pub use show::ShowKey;
-pub use wire::{AhNetVersion, NetMessage};
+pub use wire::{AhNetVersion, NetMessage, DEFAULT_AHNET_PORT};
 
 use std::fmt;
 

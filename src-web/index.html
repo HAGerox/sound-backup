@@ -5,51 +5,185 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
     <title>Stage Backup</title>
+    <link rel="stylesheet" href="vendor/fontawesome/css/fontawesome.min.css" />
+    <link rel="stylesheet" href="vendor/fontawesome/css/solid.min.css" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <main class="shell">
-      <header>
-        <h1>Backup</h1>
-      </header>
+    <main class="app-shell">
+      <section id="homeView" class="view home-view" aria-labelledby="homeTitle">
+        <header class="topbar">
+          <h1 id="homeTitle" class="sr-only">Stage Backup</h1>
+          <button id="settingsButton" class="icon-button" type="button" aria-label="Open settings">
+            <i class="fa-solid fa-gear" aria-hidden="true"></i>
+          </button>
+        </header>
 
-      <section class="panel" aria-labelledby="avantis-heading">
-        <div class="section-heading">
-          <h2 id="avantis-heading">Avantis</h2>
-          <button id="testButton" class="text-button" type="button">Test connection</button>
-        </div>
+        <div class="home-content">
+          <div class="device-strip" aria-label="Backup connections">
+            <button id="avantisIndicator" class="device-indicator" data-state="not-configured" type="button" aria-label="Set up Avantis">
+              <span class="device-icon">
+                <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+                <span class="connection-dot"></span>
+              </span>
+              <span class="device-name">Avantis</span>
+              <span id="avantisIndicatorStatus" class="device-state">Set up</span>
+            </button>
 
-        <form id="backupForm" novalidate>
-          <label class="field">
-            <span>Console address</span>
-            <input id="consoleAddress" name="consoleAddress" autocomplete="off" inputmode="url" placeholder="192.168.1.50" />
-          </label>
+            <div class="device-indicator upcoming" data-state="unavailable">
+              <span class="device-icon">
+                <i class="fa-solid fa-hard-drive" aria-hidden="true"></i>
+              </span>
+              <span class="device-name">R1</span>
+              <span class="device-state">Soon</span>
+            </div>
 
-          <label class="field">
-            <span>Stored Show</span>
-            <input id="showName" name="showName" autocomplete="off" maxlength="16" placeholder="Sunday" />
-          </label>
-
-          <div class="field">
-            <label for="backupFolder">Backup folder</label>
-            <div class="folder-row">
-              <input id="backupFolder" name="backupFolder" readonly placeholder="Choose a folder" />
-              <button id="chooseFolderButton" class="secondary-button" type="button">Choose</button>
+            <div class="device-indicator upcoming" data-state="unavailable">
+              <span class="device-icon">
+                <i class="fa-solid fa-clapperboard" aria-hidden="true"></i>
+              </span>
+              <span class="device-name">QLab</span>
+              <span class="device-state">Soon</span>
             </div>
           </div>
 
-          <p class="note">This backs up the stored Show. Store or overwrite the Show on the console first if you need current desk changes.</p>
-          <p class="path-note">Files are saved under <code>AllenHeath-Avantis/Shows</code>.</p>
+          <div class="backup-action">
+            <button id="backupButton" class="backup-button" type="button">
+              <i id="backupButtonIcon" class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+              <span id="backupButtonLabel">Set up backup</span>
+            </button>
+            <p id="backupSummary" class="backup-summary" hidden></p>
+          </div>
 
-          <button id="backupButton" class="primary-button" type="submit">Back up show</button>
-        </form>
+          <section id="progressPanel" class="progress-panel" hidden aria-live="polite">
+            <i class="progress-spinner fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
+            <div class="progress-copy">
+              <strong id="progressTitle">Backing up Avantis</strong>
+              <span id="progressDetail">Preparing…</span>
+            </div>
+            <div class="progress-track" aria-hidden="true"><span></span></div>
+          </section>
+        </div>
       </section>
 
-      <section id="status" class="status" aria-live="polite" aria-atomic="true">
-        <span id="statusText">Ready.</span>
-        <span id="statusPath" class="status-path"></span>
+      <section id="settingsView" class="view settings-view" aria-labelledby="settingsTitle" hidden>
+        <header class="settings-topbar">
+          <button id="settingsBackButton" class="back-button" type="button" aria-label="Back to backup">
+            <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+          </button>
+          <h1 id="settingsTitle">Settings</h1>
+          <span aria-hidden="true"></span>
+        </header>
+
+        <div class="settings-content">
+          <section class="settings-section" aria-labelledby="locationHeading">
+            <div class="section-title">
+              <h2 id="locationHeading">Backup location</h2>
+            </div>
+            <div id="backupLocationSetting" class="location-picker">
+              <span class="setting-leading-icon">
+                <i class="fa-solid fa-folder" aria-hidden="true"></i>
+              </span>
+              <span id="backupFolderDisplay" class="location-value">Choose a folder</span>
+              <button id="chooseFolderButton" class="secondary-button" type="button">Choose</button>
+            </div>
+          </section>
+
+          <section class="settings-section device-settings-section" aria-labelledby="devicesHeading">
+            <div class="section-title">
+              <h2 id="devicesHeading">Devices and apps</h2>
+            </div>
+
+            <article id="avantisSettingsCard" class="device-card expanded">
+              <header class="device-card-header">
+                <span class="card-device-icon avantis-icon">
+                  <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+                </span>
+                <span class="card-device-copy">
+                  <strong>Avantis</strong>
+                  <span id="avantisCardSubtitle">Choose a console</span>
+                </span>
+                <span id="avantisStatusBadge" class="status-badge" data-state="not-configured" hidden>Set up</span>
+              </header>
+
+              <div class="device-card-body">
+                <div class="discovery-heading">
+                  <h3>Console</h3>
+                  <button id="discoverButton" class="secondary-button compact" type="button">
+                    <i class="fa-solid fa-rotate" aria-hidden="true"></i>
+                    <span id="discoverButtonLabel">Scan</span>
+                  </button>
+                </div>
+
+                <div id="discoveryStatus" class="inline-status" aria-live="polite"></div>
+                <div id="deviceChoices" class="choice-list" role="radiogroup" aria-label="Avantis consoles"></div>
+
+                <details class="manual-settings">
+                  <summary>Connect by IP address</summary>
+                  <div class="manual-address-row">
+                    <label class="sr-only" for="manualAddress">Console address</label>
+                    <input id="manualAddress" autocomplete="off" inputmode="url" placeholder="Enter its IP address" />
+                    <button id="manualConnectButton" class="secondary-button" type="button">Connect</button>
+                  </div>
+                </details>
+
+                <div id="showSettings" class="show-settings" hidden>
+                  <div class="show-settings-heading">
+                    <div>
+                      <h3>Stored Shows</h3>
+                      <p id="showCountText"></p>
+                    </div>
+                    <button id="refreshShowsButton" class="icon-button small" type="button" aria-label="Refresh stored Shows">
+                      <i class="fa-solid fa-rotate" aria-hidden="true"></i>
+                    </button>
+                  </div>
+
+                  <div id="showToolbar" class="show-toolbar">
+                    <label class="search-field">
+                      <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                      <span class="sr-only">Search stored Shows</span>
+                      <input id="showSearch" type="search" placeholder="Search Shows" autocomplete="off" />
+                    </label>
+                    <button id="selectAllShowsButton" class="text-button" type="button">Select all</button>
+                  </div>
+                  <div id="showStatus" class="inline-status" aria-live="polite"></div>
+                  <div id="showChoices" class="show-list"></div>
+                </div>
+              </div>
+            </article>
+
+            <article class="device-card upcoming-card" aria-disabled="true">
+              <header class="device-card-header">
+                <span class="card-device-icon">
+                  <i class="fa-solid fa-hard-drive" aria-hidden="true"></i>
+                </span>
+                <span class="card-device-copy"><strong>R1</strong></span>
+                <span class="status-badge neutral">Coming soon</span>
+              </header>
+            </article>
+
+            <article class="device-card upcoming-card" aria-disabled="true">
+              <header class="device-card-header">
+                <span class="card-device-icon">
+                  <i class="fa-solid fa-clapperboard" aria-hidden="true"></i>
+                </span>
+                <span class="card-device-copy"><strong>QLab</strong></span>
+                <span class="status-badge neutral">Coming soon</span>
+              </header>
+            </article>
+          </section>
+        </div>
       </section>
     </main>
+
+    <div id="toast" class="toast" hidden role="status" aria-live="polite">
+      <span class="toast-icon" aria-hidden="true">
+        <i id="toastIcon" class="fa-solid fa-check"></i>
+      </span>
+      <span class="toast-copy"><strong id="toastTitle">Backup complete</strong><span id="toastDetail"></span></span>
+      <button id="toastCloseButton" class="toast-close" type="button" aria-label="Dismiss notification">×</button>
+    </div>
+
     <script src="app.js" defer></script>
   </body>
 </html>

@@ -1,13 +1,14 @@
 # Stage Backup
 
-A small macOS-first Tauri app for backing up a stored Allen & Heath Avantis Show over the network.
+A small macOS-first Tauri app for one-click backups of stored Allen & Heath Avantis Shows over the network.
 
-Version 0.1 does one job:
+The current Avantis provider:
 
-1. Connect to an Avantis by address.
-2. Find one configured **stored User Show** without recalling it.
-3. Ask the console to send that Show archive over AH-Net.
-4. Save the received bytes unchanged under:
+1. Searches active local IPv4 networks for Avantis consoles and verifies them over AH-Net.
+2. Reads the console's stored **User Show** catalogue without recalling a Show.
+3. Lets the user search for and select one or more Shows.
+4. Downloads the selected Shows in one console session.
+5. Saves the received bytes unchanged under:
 
    `AllenHeath-Avantis/Shows/<Show>_YYYY-MM-DD_HH-mm-ssZ.tar.gz`
 
@@ -19,7 +20,9 @@ The `AllenHeath-Avantis` folder can then be placed at the root of a USB drive fo
 - It backs up the **stored Show file**, not uncommitted live desk state. Store/Overwrite on the Avantis first if current changes need to be in the backup.
 - Show archive bytes are not decompressed, recompressed, converted, or otherwise re-encoded.
 - Output filenames are restricted to simple ASCII characters plus the timestamp.
-- Version 0.1 backs up one configured Show. The provider boundary is intentionally small so later versions can add all-Shows backup and other systems such as QLab without complicating this screen.
+- Network discovery scans the active local subnet (wide networks are limited to the computer's local `/24`) and only accepts devices that expose the Avantis Show File Manager. A manual address remains available as a fallback.
+- The home screen is deliberately limited to connection status, one backup button, progress, and completion feedback. Backup location, console selection, and Show selection live in Settings.
+- R1 and QLab are represented in the device model and interface as future providers; they do not perform backups yet.
 
 ## Run on macOS
 
@@ -43,7 +46,7 @@ npm run tauri build
 
 ## Tests
 
-The network/protocol implementation lives in the dependency-free `avantis-protocol` workspace crate. Its integration test runs a simulated AH-Net Avantis and checks the complete path from handshake through selected Show download and USB-layout output:
+The network/protocol implementation lives in the dependency-free `avantis-protocol` workspace crate. Its integration tests run simulated AH-Net consoles and cover catalogue filtering, native-location preference, single-Show backup, multi-Show backup in one session, and USB-layout output:
 
 ```sh
 cargo test -p avantis-protocol
@@ -59,7 +62,7 @@ node scripts/build.mjs
 
 The implementation was derived for interoperability from the user-supplied Avantis Director V2.01 application. The protocol path and file layout have unit/integration coverage, including a mock console, but this environment does not contain a physical Avantis. The first real-console run should therefore be treated as hardware validation, particularly for AH-Net routing details that are not publicly documented by Allen & Heath.
 
-Set `STAGE_BACKUP_TRACE=1` before launching from a terminal to print protocol-level diagnostics if a real console behaves differently.
+Set `STAGE_BACKUP_TRACE=1` before launching from a terminal to print protocol-level diagnostics if a real console behaves differently. Automatic discovery also depends on the Mac and Avantis being reachable on the same local IPv4 network; routed or firewalled networks may require the manual address fallback.
 
 ## Repository layout
 

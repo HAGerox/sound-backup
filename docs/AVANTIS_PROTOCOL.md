@@ -9,6 +9,10 @@ These notes document the small subset of Director V2.01 behaviour used by Stage 
 - Director then attempts the AH-Net v2 hello/ack exchange; the implementation falls back to v1 if that negotiation is not answered.
 - Stage Backup listens for NET traffic on both the TCP connection and the negotiated UDP pair. Requests are sent on TCP; file acknowledgements are returned on the transport that delivered the packet.
 
+## Local discovery
+
+Director V2.01 connects to an explicitly supplied host and does not expose Bonjour/mDNS discovery. Stage Backup therefore scans the Mac's active local IPv4 subnets for TCP 51321, then performs the normal AH-Net handshake and `Show File Manager` lookup before presenting a device. Wide networks are intentionally limited to the Mac's local `/24`; a manually entered address remains available for routed networks.
+
 ## Object discovery
 
 The remote registry is queried for `Show File Manager`. The returned object handle is then used directly. This avoids emulating the full Director Show Manager UI or reciprocal Show Manager discovery.
@@ -32,6 +36,8 @@ Director's User Show storage maps to location `4`. Stage Backup prefers that loc
 Director contains a direct `UploadShowToConnId` path. Stage Backup uses Show File Manager function `0x0118` with the selected Show key. It does **not** use `0x0119`, which stores current state before upload.
 
 This distinction is why Stage Backup can download a stored Show without recalling it and without changing live console state.
+
+Multiple selected Shows are downloaded sequentially through one AH-Net session. The catalogue is read once, requested names are matched case-insensitively and deduplicated, and each console key is reused for its corresponding `0x0118` request.
 
 ## File transfer
 
@@ -67,13 +73,13 @@ Stage Backup therefore writes the exact received archive into that folder struct
 
 ## Deliberate scope
 
-Version 0.1 does not implement:
+The current implementation does not implement:
 
 - remote Store / Overwrite
 - remote Recall
 - Show deletion or rename
-- bulk Show backup
 - Scene or Library transfer
+- R1 backup
 - QLab backup
 
-Those should be added as separate provider/service operations rather than broadening the single-Show backup command.
+Those should be added as separate provider/service operations rather than broadening the Avantis protocol path.

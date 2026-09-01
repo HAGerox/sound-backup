@@ -8,7 +8,7 @@ use crate::{
     BackupError, Result,
 };
 use std::{
-    collections::{BTreeSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     fs::{self, File, OpenOptions},
     io::{Read, Write},
     net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket},
@@ -37,12 +37,29 @@ pub struct BackupRequest {
     pub destination: PathBuf,
 }
 
+#[derive(Clone, Debug)]
+pub struct BackupBatchRequest {
+    pub endpoint: String,
+    pub show_names: Vec<String>,
+    pub destination: PathBuf,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BackupOutcome {
     pub path: PathBuf,
     pub bytes: u64,
     pub show_name: String,
     pub source_file_name: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BackupBatchOutcome {
+    pub files: Vec<BackupOutcome>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StoredShow {
+    pub name: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -63,24 +80,78 @@ pub fn test_connection(endpoint: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn backup_show(request: &BackupRequest) -> Result<BackupOutcome> {
-    validate_request(request)?;
-    let mut session = Session::connect(&request.endpoint)?;
+pub fn list_stored_shows(endpoint: &str) -> Result<Vec<StoredShow>> {
+    validate_endpoint(endpoint)?;
+    let mut session = Session::connect(endpoint)?;
     let show_manager = session.discover_show_file_manager()?;
-    let show_key = session.find_stored_show(show_manager, request.show_name.trim())?;
-    session.download_show(show_manager, &show_key, &request.destination)
+    Ok(session
+        .list_stored_show_keys(show_manager)?
+        .into_iter()
+        .map(|key| StoredShow {
+            name: key.name().to_string(),
+        })
+        .collect())
 }
 
-fn validate_request(request: &BackupRequest) -> Result<()> {
-    if request.endpoint.trim().is_empty() {
+pub fn backup_show(request: &BackupRequest) -> Result<BackupOutcome> {
+    let outcome = backup_shows(&BackupBatchRequest {
+        endpoint: request.endpoint.clone(),
+        show_names: vec![request.show_name.clone()],
+        destination: request.destination.clone(),
+    })?;
+    outcome.files.into_iter().next().ok_or_else(|| {
+        BackupError::Protocol("The Avantis backup completed without producing a file.".into())
+    })
+}
+
+pub fn backup_shows(request: &BackupBatchRequest) -> Result<BackupBatchOutcome> {
+    validate_batch_request(request)?;
+    let mut session = Session::connect(&request.endpoint)?;
+    let show_manager = session.discover_show_file_manager()?;
+    let keys = session.list_stored_show_keys(show_manager)?;
+    let available: Vec<String> = keys.iter().map(|key| key.name().to_string()).collect();
+    let mut selected = Vec::new();
+    let mut seen = BTreeSet::new();
+
+    for requested in &request.show_names {
+        let requested = requested.trim();
+        let normalised = requested.to_ascii_lowercase();
+        if !seen.insert(normalised) {
+            continue;
+        }
+        let Some(key) = keys
+            .iter()
+            .find(|key| key.name().eq_ignore_ascii_case(requested))
+        else {
+            return Err(BackupError::ShowNotFound {
+                requested: requested.to_string(),
+                available,
+            });
+        };
+        selected.push(key.clone());
+    }
+
+    let mut files = Vec::with_capacity(selected.len());
+    for key in selected {
+        files.push(session.download_show(show_manager, &key, &request.destination)?);
+    }
+    Ok(BackupBatchOutcome { files })
+}
+
+fn validate_endpoint(endpoint: &str) -> Result<()> {
+    if endpoint.trim().is_empty() {
         return Err(BackupError::InvalidInput(
             "Enter the Avantis address.".into(),
         ));
     }
-    let show = request.show_name.trim();
+    Ok(())
+}
+
+fn validate_show_name(show: &str) -> Result<()> {
+    let show = show.trim();
     if show.is_empty() {
         return Err(BackupError::InvalidInput(
-            "Enter the stored Show name.".into(),
+            "Choose at least one stored Show.".into(),
         ));
     }
     if show.len() > 16 {
@@ -92,6 +163,19 @@ fn validate_request(request: &BackupRequest) -> Result<()> {
         return Err(BackupError::InvalidInput(
             "The Show name contains a control character.".into(),
         ));
+    }
+    Ok(())
+}
+
+fn validate_batch_request(request: &BackupBatchRequest) -> Result<()> {
+    validate_endpoint(&request.endpoint)?;
+    if request.show_names.is_empty() {
+        return Err(BackupError::InvalidInput(
+            "Choose at least one stored Show.".into(),
+        ));
+    }
+    for show in &request.show_names {
+        validate_show_name(show)?;
     }
     if request.destination.as_os_str().is_empty() {
         return Err(BackupError::InvalidInput("Choose a backup folder.".into()));
@@ -212,7 +296,7 @@ impl Session {
         ))
     }
 
-    fn find_stored_show(&mut self, show_manager: u16, requested: &str) -> Result<ShowKey> {
+    fn list_stored_show_keys(&mut self, show_manager: u16) -> Result<Vec<ShowKey>> {
         self.send_net_tcp(&NetMessage::new(
             show_manager,
             LOCAL_OBJECT,
@@ -220,13 +304,12 @@ impl Session {
             vec![],
         ))?;
         let deadline = Instant::now() + Duration::from_secs(5);
-        let mut available = BTreeSet::new();
-        let mut fallback_match: Option<ShowKey> = None;
-        let mut fallback_settle_deadline: Option<Instant> = None;
+        let mut shows: BTreeMap<String, ShowKey> = BTreeMap::new();
+        let mut catalogue_settle_deadline: Option<Instant> = None;
         let mut sync_retried = false;
 
         while Instant::now() < deadline {
-            let receive_deadline = fallback_settle_deadline
+            let receive_deadline = catalogue_settle_deadline
                 .map(|settle| settle.min(deadline))
                 .unwrap_or(deadline);
             let received = match self.recv_net_until(receive_deadline) {
@@ -258,35 +341,28 @@ impl Session {
                 key.name()
             ));
 
-            // Factory and USB locations are not console-stored User Shows. Reverse engineering
-            // of Director V2.01 maps User Show storage to location 4; location 2 is accepted only
-            // as a compatibility fallback after the catalogue has had time to settle.
+            // Factory and USB locations are not console-stored User Shows. Director V2.01 maps
+            // User Show storage to location 4; another non-removable location is retained as a
+            // compatibility fallback, but an explicit location-4 copy always wins.
             if !matches!(key.location(), 0 | 1) {
-                available.insert(key.name().to_string());
-            }
-            if key.name().eq_ignore_ascii_case(requested) {
-                if key.location() == 4 {
-                    return Ok(key);
+                let normalised = key.name().to_ascii_lowercase();
+                let replace = shows
+                    .get(&normalised)
+                    .is_none_or(|current| current.location() != 4 || key.location() == 4);
+                if replace {
+                    shows.insert(normalised, key);
                 }
-                if !matches!(key.location(), 0 | 1) {
-                    fallback_match = Some(key);
-                    fallback_settle_deadline = Some(Instant::now() + Duration::from_millis(250));
-                }
-            }
-            if fallback_match.is_some() {
-                // Keep listening until the catalogue has been quiet briefly in case the explicit
-                // User Show entry follows an internal compatibility copy.
-                fallback_settle_deadline = Some(Instant::now() + Duration::from_millis(250));
+                catalogue_settle_deadline = Some(Instant::now() + Duration::from_millis(300));
             }
         }
 
-        if let Some(key) = fallback_match {
-            return Ok(key);
-        }
-        Err(BackupError::ShowNotFound {
-            requested: requested.to_string(),
-            available: available.into_iter().collect(),
-        })
+        let mut shows: Vec<ShowKey> = shows.into_values().collect();
+        shows.sort_by(|left, right| {
+            left.name()
+                .to_ascii_lowercase()
+                .cmp(&right.name().to_ascii_lowercase())
+        });
+        Ok(shows)
     }
 
     fn download_show(
