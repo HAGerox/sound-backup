@@ -30,21 +30,14 @@
               <span id="avantisIndicatorStatus" class="device-state">Set up</span>
             </button>
 
-            <div class="device-indicator upcoming" data-state="unavailable">
-              <span class="device-icon">
-                <i class="fa-solid fa-hard-drive" aria-hidden="true"></i>
-              </span>
-              <span class="device-name">R1</span>
-              <span class="device-state">Soon</span>
-            </div>
-
-            <div class="device-indicator upcoming" data-state="unavailable">
+            <button id="qlabIndicator" class="device-indicator" data-state="not-configured" type="button" aria-label="Set up QLab">
               <span class="device-icon">
                 <i class="fa-solid fa-clapperboard" aria-hidden="true"></i>
+                <span class="connection-dot"></span>
               </span>
               <span class="device-name">QLab</span>
-              <span class="device-state">Soon</span>
-            </div>
+              <span id="qlabIndicatorStatus" class="device-state">Set up</span>
+            </button>
           </div>
 
           <div class="backup-action">
@@ -99,11 +92,7 @@
                 <span class="card-device-icon avantis-icon">
                   <i class="fa-solid fa-sliders" aria-hidden="true"></i>
                 </span>
-                <span class="card-device-copy">
-                  <strong>Avantis</strong>
-                  <span id="avantisCardSubtitle">Choose a console</span>
-                </span>
-                <span id="avantisStatusBadge" class="status-badge" data-state="not-configured" hidden>Set up</span>
+                <strong class="card-device-name">Avantis</strong>
               </header>
 
               <div class="device-card-body">
@@ -152,24 +141,54 @@
               </div>
             </article>
 
-            <article class="device-card upcoming-card" aria-disabled="true">
-              <header class="device-card-header">
-                <span class="card-device-icon">
-                  <i class="fa-solid fa-hard-drive" aria-hidden="true"></i>
-                </span>
-                <span class="card-device-copy"><strong>R1</strong></span>
-                <span class="status-badge neutral">Coming soon</span>
-              </header>
-            </article>
-
-            <article class="device-card upcoming-card" aria-disabled="true">
+            <article id="qlabSettingsCard" class="device-card">
               <header class="device-card-header">
                 <span class="card-device-icon">
                   <i class="fa-solid fa-clapperboard" aria-hidden="true"></i>
                 </span>
-                <span class="card-device-copy"><strong>QLab</strong></span>
-                <span class="status-badge neutral">Coming soon</span>
+                <strong class="card-device-name">QLab</strong>
               </header>
+
+              <div class="device-card-body">
+                <div class="discovery-heading">
+                  <h3>Projects</h3>
+                  <button id="qlabDiscoverButton" class="secondary-button compact" type="button">
+                    <i class="fa-solid fa-rotate" aria-hidden="true"></i>
+                    <span id="qlabDiscoverButtonLabel">Scan</span>
+                  </button>
+                </div>
+                <div id="qlabDiscoveryStatus" class="inline-status" aria-live="polite"></div>
+                <div id="qlabInstanceChoices" class="choice-list" role="radiogroup" aria-label="Open QLab projects"></div>
+                <div id="qlabWorkspaceStatus" class="inline-status" aria-live="polite"></div>
+
+                <div id="qlabPasscodePanel" class="remote-login" hidden>
+                  <div class="login-heading"><h3>OSC access</h3></div>
+                  <div class="single-credential-row">
+                    <label class="sr-only" for="qlabPasscode">QLab OSC passcode</label>
+                    <input id="qlabPasscode" type="password" autocomplete="off" placeholder="Workspace passcode" />
+                    <button id="qlabUnlockButton" class="secondary-button" type="button">Unlock</button>
+                  </div>
+                </div>
+
+                <div id="qlabLogin" class="remote-login" hidden>
+                  <div class="login-heading">
+                    <h3>Remote Login</h3>
+                    <button id="qlabRemoteLoginHelp" class="help-link" type="button">Turn on</button>
+                  </div>
+                  <div class="credential-row">
+                    <label>
+                      <span>Account</span>
+                      <input id="qlabUsername" autocomplete="username" placeholder="macOS account name" />
+                    </label>
+                    <label>
+                      <span>Password</span>
+                      <input id="qlabPassword" type="password" autocomplete="current-password" placeholder="Saved in Keychain" />
+                    </label>
+                    <button id="qlabConnectButton" class="secondary-button" type="button">Connect</button>
+                  </div>
+                  <div id="qlabLoginStatus" class="inline-status" aria-live="polite"></div>
+                </div>
+              </div>
             </article>
           </section>
         </div>

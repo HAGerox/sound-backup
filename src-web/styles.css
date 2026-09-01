@@ -96,7 +96,6 @@ button:disabled { cursor: default; opacity: 0.55; }
 .device-indicator[data-state="checking"] .connection-dot { background: var(--warning); animation: pulse 1.2s ease-in-out infinite; }
 .device-indicator[data-state="offline"] .connection-dot { background: var(--danger); }
 .device-indicator[data-state="offline"] .device-state { color: var(--danger); }
-.device-indicator.upcoming { opacity: 0.44; }
 
 .backup-action { display: grid; justify-items: center; gap: 14px; }
 .backup-button {
@@ -167,22 +166,12 @@ button:disabled { cursor: default; opacity: 0.55; }
 
 .device-settings-section { gap: 11px; }
 .device-card { overflow: hidden; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
-.device-card-header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 72px; padding: 12px 15px; }
+.device-card-header { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; min-height: 72px; padding: 12px 15px; }
 .card-device-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: var(--surface-secondary); color: var(--muted); }
 .card-device-icon i { font-size: 21px; }
 .card-device-icon.avantis-icon { color: #5e6070; }
-.card-device-copy { display: grid; gap: 3px; min-width: 0; }
-.card-device-copy strong { font-size: 13px; }
-.card-device-copy span { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.status-badge { padding: 5px 8px; border-radius: 99px; background: var(--surface-tertiary); color: var(--muted); font-size: 10px; font-weight: 700; }
-.status-badge[data-state="connected"] { background: var(--success-soft); color: var(--success); }
-.status-badge[data-state="checking"] { background: var(--warning-soft); color: var(--warning); }
-.status-badge[data-state="offline"] { background: var(--danger-soft); color: var(--danger); }
-.status-badge.neutral { color: var(--faint); }
+.card-device-name { min-width: 0; font-size: 13px; }
 .device-card-body { display: grid; gap: 13px; padding: 16px; border-top: 1px solid var(--border); }
-.upcoming-card { opacity: 0.55; }
-.upcoming-card .device-card-header { min-height: 64px; }
-
 .discovery-heading, .show-settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .discovery-heading h3, .show-settings-heading h3 { margin: 0; font-size: 12px; }
 .show-settings-heading p { margin: 3px 0 0; color: var(--muted); font-size: 11px; line-height: 1.35; }
@@ -192,14 +181,13 @@ button:disabled { cursor: default; opacity: 0.55; }
 .inline-status.success { color: var(--success); }
 
 .choice-list { display: grid; gap: 7px; }
-.device-choice { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; min-height: 48px; padding: 8px 11px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface-secondary); cursor: pointer; }
+.device-choice { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 10px; min-height: 48px; padding: 8px 11px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface-secondary); cursor: pointer; }
 .device-choice:hover { border-color: var(--border-strong); }
 .device-choice.selected { border-color: color-mix(in srgb, var(--success) 45%, var(--border)); background: color-mix(in srgb, var(--success-soft) 65%, var(--surface)); }
 .device-choice input { width: 16px; height: 16px; accent-color: var(--success); }
 .device-choice-copy { display: grid; gap: 2px; }
 .device-choice-copy strong { font-size: 12px; }
 .device-choice-copy span { color: var(--muted); font-size: 10px; }
-.device-choice-state { color: var(--success); font-size: 10px; font-weight: 650; }
 
 .manual-settings { border-top: 1px solid var(--border); padding-top: 11px; }
 .manual-settings summary { width: fit-content; color: var(--muted); font-size: 11px; cursor: pointer; }
@@ -223,6 +211,17 @@ input::placeholder { color: var(--faint); }
 .show-option span { font-size: 12px; }
 .empty-choice { display: grid; justify-items: center; gap: 10px; padding: 24px 14px; color: var(--muted); font-size: 11px; text-align: center; }
 
+.remote-login { display: grid; gap: 10px; padding-top: 14px; border-top: 1px solid var(--border); }
+.login-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.login-heading h3 { margin: 0; font-size: 12px; }
+.help-link { padding: 3px 0; border: 0; background: transparent; color: var(--muted); font-size: 10px; font-weight: 650; text-decoration: none; }
+.help-link:hover { color: var(--text); }
+.credential-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: 8px; }
+.credential-row label { display: grid; gap: 5px; min-width: 0; }
+.credential-row label > span { color: var(--muted); font-size: 10px; font-weight: 600; }
+.single-credential-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+
+
 .toast { position: fixed; z-index: 20; right: 22px; bottom: 22px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 11px; width: min(390px, calc(100% - 44px)); padding: 13px 12px 13px 14px; border: 1px solid var(--border); border-radius: 14px; background: color-mix(in srgb, var(--surface) 95%, transparent); box-shadow: var(--shadow); backdrop-filter: blur(18px); }
 .toast-icon { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--success); color: white; }
 .toast-icon i { font-size: 13px; }
@@ -242,6 +241,8 @@ input::placeholder { color: var(--faint); }
   .home-content { gap: 42px; padding-left: 20px; padding-right: 20px; }
   .device-strip { gap: 18px; }
   .settings-content { width: min(100% - 32px, 680px); }
+  .credential-row { grid-template-columns: 1fr; }
+  .credential-row .secondary-button { justify-self: stretch; }
 }
 
 @media (prefers-reduced-motion: reduce) {

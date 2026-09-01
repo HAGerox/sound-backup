@@ -42,7 +42,7 @@ pub fn sanitise_archive_stem(name: &str) -> String {
 
 pub fn dated_archive_name(source_name: &str, when: SystemTime) -> String {
     let stamp = utc_timestamp(when);
-    format!("{}_{}.tar.gz", sanitise_archive_stem(source_name), stamp)
+    format!("{}_{}.tar.gz", stamp, sanitise_archive_stem(source_name))
 }
 
 fn utc_timestamp(when: SystemTime) -> String {
@@ -95,7 +95,7 @@ mod tests {
             "My: Show?.tar.gz",
             UNIX_EPOCH + Duration::from_secs(1_788_220_800),
         );
-        assert_eq!(name, "My_ Show_2026-09-01_00-00-00Z.tar.gz");
+        assert_eq!(name, "2026-09-01_00-00-00Z_My_ Show.tar.gz");
         assert!(name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.')));

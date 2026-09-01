@@ -44,12 +44,9 @@ fn backs_up_selected_user_show_end_to_end() {
     assert_eq!(outcome.show_name, "Sunday");
     assert_eq!(outcome.source_file_name, "Sunday.tar.gz");
     assert!(outcome.path.starts_with(usb_show_directory(&base)));
-    assert!(outcome
-        .path
-        .file_name()
-        .unwrap()
-        .to_string_lossy()
-        .starts_with("Sunday_20"));
+    let filename = outcome.path.file_name().unwrap().to_string_lossy();
+    assert!(filename.starts_with("20"));
+    assert!(filename.ends_with("_Sunday.tar.gz"));
     assert_eq!(fs::read(&outcome.path).unwrap(), fixture_archive());
 
     server.join().unwrap();

@@ -73,13 +73,11 @@ Stage Backup therefore writes the exact received archive into that folder struct
 
 ## Deliberate scope
 
-The current implementation does not implement:
+The Avantis protocol provider does not implement:
 
 - remote Store / Overwrite
 - remote Recall
 - Show deletion or rename
 - Scene or Library transfer
-- R1 backup
-- QLab backup
 
-Those should be added as separate provider/service operations rather than broadening the Avantis protocol path.
+Other systems belong in separate providers rather than broadening the Avantis protocol path.
