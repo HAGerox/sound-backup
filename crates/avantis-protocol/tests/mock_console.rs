@@ -25,7 +25,7 @@ struct Msg {
 fn backs_up_selected_user_show_end_to_end() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
-    let server = thread::spawn(move || mock_console(listener));
+    let server = thread::spawn(move || mock_console(listener, 4));
 
     let base = temp_dir();
     fs::create_dir_all(&base).unwrap();
@@ -39,22 +39,54 @@ fn backs_up_selected_user_show_end_to_end() {
     assert_eq!(outcome.show_name, "Sunday");
     assert_eq!(outcome.source_file_name, "Sunday.tar.gz");
     assert!(outcome.path.starts_with(usb_show_directory(&base)));
-    assert!(outcome.path.file_name().unwrap().to_string_lossy().starts_with("Sunday_20"));
+    assert!(outcome
+        .path
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .starts_with("Sunday_20"));
     assert_eq!(fs::read(&outcome.path).unwrap(), fixture_archive());
 
     server.join().unwrap();
     let _ = fs::remove_dir_all(base);
 }
 
-fn mock_console(listener: TcpListener) {
+#[test]
+fn backs_up_compatibility_location_after_catalogue_settles() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = thread::spawn(move || mock_console(listener, 2));
+
+    let base = temp_dir();
+    fs::create_dir_all(&base).unwrap();
+    let outcome = backup_show(&BackupRequest {
+        endpoint: format!("127.0.0.1:{port}"),
+        show_name: "Sunday".into(),
+        destination: base.clone(),
+    })
+    .unwrap();
+
+    assert_eq!(outcome.show_name, "Sunday");
+    assert_eq!(fs::read(&outcome.path).unwrap(), fixture_archive());
+
+    server.join().unwrap();
+    let _ = fs::remove_dir_all(base);
+}
+
+fn mock_console(listener: TcpListener, show_location: u8) {
     let udp = UdpSocket::bind("127.0.0.1:0").unwrap();
     let udp_port = udp.local_addr().unwrap().port();
     let (mut stream, _) = listener.accept().unwrap();
-    stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
 
     let hello = read_frame(&mut stream);
     assert_eq!(hello[0], 0xE0);
-    write_util(&mut stream, &[0x02, 0x03, (udp_port >> 8) as u8, udp_port as u8]);
+    write_util(
+        &mut stream,
+        &[0x02, 0x03, (udp_port >> 8) as u8, udp_port as u8],
+    );
     let v2 = read_frame(&mut stream);
     assert_eq!(&v2[3..5], &[0x04, 0x03]);
     write_util(&mut stream, &[0x05, 0x03]);
@@ -80,12 +112,12 @@ fn mock_console(listener: TcpListener) {
     assert_eq!(sync.target, SERVER_SHOW_MANAGER);
 
     write_net(&mut stream, show_added("Factory", 0));
-    write_net(&mut stream, show_added("Sunday", 4));
+    write_net(&mut stream, show_added("Sunday", show_location));
 
     let request = decode_net(&read_frame(&mut stream));
     assert_eq!(request.function, 0x118);
     assert_eq!(request.target, SERVER_SHOW_MANAGER);
-    assert_eq!(request.payload[17], 4);
+    assert_eq!(request.payload[17], show_location);
     assert_eq!(request.payload[41], 0);
 
     let archive = fixture_archive();
@@ -153,7 +185,12 @@ fn write_util(stream: &mut TcpStream, body: &[u8]) {
 
 fn write_net(stream: &mut TcpStream, message: Msg) {
     let mut bytes = vec![0xF1];
-    for value in [message.connection, message.target, message.source, message.function] {
+    for value in [
+        message.connection,
+        message.target,
+        message.source,
+        message.function,
+    ] {
         bytes.extend_from_slice(&value.to_be_bytes());
         bytes.extend_from_slice(&[0, 0]);
     }
@@ -204,6 +241,9 @@ fn read_frame(stream: &mut TcpStream) -> Vec<u8> {
 }
 
 fn temp_dir() -> PathBuf {
-    let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
     std::env::temp_dir().join(format!("stage-backup-test-{}-{unique}", std::process::id()))
 }

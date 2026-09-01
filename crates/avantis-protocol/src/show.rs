@@ -12,13 +12,17 @@ pub struct ShowKey {
 impl ShowKey {
     pub fn parse(payload: &[u8]) -> Result<Self> {
         if payload.len() < SHOW_KEY_BYTES {
-            return Err(BackupError::Protocol("Avantis returned a truncated Show key.".into()));
+            return Err(BackupError::Protocol(
+                "Avantis returned a truncated Show key.".into(),
+            ));
         }
         let mut raw = [0u8; SHOW_KEY_BYTES];
         raw.copy_from_slice(&payload[..SHOW_KEY_BYTES]);
         let name = latin1_c_string(&raw[..17]);
         if name.is_empty() {
-            return Err(BackupError::Protocol("Avantis returned a Show with no name.".into()));
+            return Err(BackupError::Protocol(
+                "Avantis returned a Show with no name.".into(),
+            ));
         }
         Ok(Self {
             location: raw[17],

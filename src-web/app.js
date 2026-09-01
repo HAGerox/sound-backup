@@ -1,4 +1,11 @@
-const { invoke } = window.__TAURI__.core;
+const nativeInvoke = window.__TAURI__?.core?.invoke;
+
+async function invoke(command, arguments_) {
+  if (nativeInvoke) return nativeInvoke(command, arguments_);
+  if (command === 'load_settings') return {};
+  if (command === 'save_settings') return;
+  throw new Error('This action is available in the Stage Backup desktop app.');
+}
 
 const elements = {
   form: document.querySelector('#backupForm'),
@@ -43,6 +50,7 @@ function setBusy(value, label = 'Back up show') {
 async function saveSettingsSoon() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
+    saveTimer = undefined;
     try {
       await invoke('save_settings', { settings: settings() });
     } catch (error) {
@@ -79,6 +87,8 @@ elements.chooseFolderButton.addEventListener('click', async () => {
   try {
     const selected = await invoke('choose_backup_folder');
     if (selected) {
+      clearTimeout(saveTimer);
+      saveTimer = undefined;
       elements.backupFolder.value = selected;
       await invoke('save_settings', { settings: settings() });
       setStatus('Ready.');
@@ -121,6 +131,8 @@ elements.form.addEventListener('submit', async (event) => {
   setBusy(true);
   setStatus('Connecting and backing up the stored Show…');
   try {
+    clearTimeout(saveTimer);
+    saveTimer = undefined;
     await invoke('save_settings', { settings: current });
     const result = await invoke('backup_avantis_show', { input: current });
     setStatus(`Backed up ${result.showName}.`, 'success', result.path);

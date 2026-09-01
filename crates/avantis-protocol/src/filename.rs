@@ -1,4 +1,7 @@
-use std::{path::{Path, PathBuf}, time::{SystemTime, UNIX_EPOCH}};
+use std::{
+    path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 pub const AVANTIS_USB_ROOT: &str = "AllenHeath-Avantis";
 pub const AVANTIS_USB_SHOWS: &str = "Shows";
@@ -30,7 +33,11 @@ pub fn sanitise_archive_stem(name: &str) -> String {
         .trim_matches(|ch: char| matches!(ch, ' ' | '_' | '-'))
         .trim()
         .to_string();
-    if output.is_empty() { "Show".into() } else { output }
+    if output.is_empty() {
+        "Show".into()
+    } else {
+        output
+    }
 }
 
 pub fn dated_archive_name(source_name: &str, when: SystemTime) -> String {
@@ -89,6 +96,8 @@ mod tests {
             UNIX_EPOCH + Duration::from_secs(1_788_220_800),
         );
         assert_eq!(name, "My_ Show_2026-09-01_00-00-00Z.tar.gz");
-        assert!(name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.')));
+        assert!(name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.')));
     }
 }

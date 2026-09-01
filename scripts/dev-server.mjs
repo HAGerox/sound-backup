@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
-import { extname, join, normalize, resolve } from 'node:path';
+import { extname, isAbsolute, join, normalize, relative, resolve } from 'node:path';
 import './build.mjs';
 
 const root = resolve(import.meta.dirname, '..', 'dist');
@@ -15,9 +15,10 @@ const types = {
 http.createServer(async (request, response) => {
   try {
     const urlPath = decodeURIComponent((request.url || '/').split('?')[0]);
-    const relative = normalize(urlPath === '/' ? 'index.html' : urlPath.replace(/^\/+/, ''));
-    const path = join(root, relative);
-    if (!path.startsWith(root)) throw new Error('invalid path');
+    const requestedPath = normalize(urlPath === '/' ? 'index.html' : urlPath.replace(/^\/+/, ''));
+    const path = join(root, requestedPath);
+    const pathFromRoot = relative(root, path);
+    if (pathFromRoot.startsWith('..') || isAbsolute(pathFromRoot)) throw new Error('invalid path');
     const info = await stat(path);
     if (!info.isFile()) throw new Error('not a file');
     const data = await readFile(path);

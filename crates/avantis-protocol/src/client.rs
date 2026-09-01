@@ -1,12 +1,15 @@
 use crate::{
     filename::{dated_archive_name, usb_show_directory},
     show::ShowKey,
-    wire::{be_u16, be_u32, decode_datagram, encode_net, encode_util, AhNetVersion, NetMessage, WireDecoder, WireFrame, DEFAULT_AHNET_PORT},
+    wire::{
+        be_u16, be_u32, decode_datagram, encode_net, encode_util, AhNetVersion, NetMessage,
+        WireDecoder, WireFrame, DEFAULT_AHNET_PORT,
+    },
     BackupError, Result,
 };
 use std::{
     collections::{BTreeSet, VecDeque},
-    fs::{self, File},
+    fs::{self, File, OpenOptions},
     io::{Read, Write},
     net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket},
     path::{Path, PathBuf},
@@ -70,17 +73,25 @@ pub fn backup_show(request: &BackupRequest) -> Result<BackupOutcome> {
 
 fn validate_request(request: &BackupRequest) -> Result<()> {
     if request.endpoint.trim().is_empty() {
-        return Err(BackupError::InvalidInput("Enter the Avantis address.".into()));
+        return Err(BackupError::InvalidInput(
+            "Enter the Avantis address.".into(),
+        ));
     }
     let show = request.show_name.trim();
     if show.is_empty() {
-        return Err(BackupError::InvalidInput("Enter the stored Show name.".into()));
+        return Err(BackupError::InvalidInput(
+            "Enter the stored Show name.".into(),
+        ));
     }
-    if show.as_bytes().len() > 16 {
-        return Err(BackupError::InvalidInput("Avantis Show names are limited to 16 bytes.".into()));
+    if show.len() > 16 {
+        return Err(BackupError::InvalidInput(
+            "Avantis Show names are limited to 16 bytes.".into(),
+        ));
     }
     if show.chars().any(|ch| ch.is_control()) {
-        return Err(BackupError::InvalidInput("The Show name contains a control character.".into()));
+        return Err(BackupError::InvalidInput(
+            "The Show name contains a control character.".into(),
+        ));
     }
     if request.destination.as_os_str().is_empty() {
         return Err(BackupError::InvalidInput("Choose a backup folder.".into()));
@@ -100,8 +111,12 @@ impl Session {
     fn connect(endpoint: &str) -> Result<Self> {
         let address = resolve_endpoint(endpoint)?;
         trace(format!("connect {address}"));
-        let tcp = TcpStream::connect_timeout(&address, Duration::from_secs(3))
-            .map_err(|error| BackupError::Protocol(format!("Could not connect to Avantis at {address}: {error}")))?;
+        let tcp =
+            TcpStream::connect_timeout(&address, Duration::from_secs(3)).map_err(|error| {
+                BackupError::Protocol(format!(
+                    "Could not connect to Avantis at {address}: {error}"
+                ))
+            })?;
         tcp.set_nodelay(true)?;
         tcp.set_read_timeout(Some(Duration::from_millis(80)))?;
         tcp.set_write_timeout(Some(Duration::from_secs(2)))?;
@@ -122,9 +137,16 @@ impl Session {
             version: AhNetVersion::V1,
         };
 
-        session.send_util(&[0x01, 0x03, (local_udp_port >> 8) as u8, local_udp_port as u8])?;
+        session.send_util(&[
+            0x01,
+            0x03,
+            (local_udp_port >> 8) as u8,
+            local_udp_port as u8,
+        ])?;
         let hello_deadline = Instant::now() + Duration::from_secs(2);
-        let hello = session.wait_for_util(hello_deadline, |body| body.len() >= 4 && body[0] == 0x02 && body[1] == 0x03)?;
+        let hello = session.wait_for_util(hello_deadline, |body| {
+            body.len() >= 4 && body[0] == 0x02 && body[1] == 0x03
+        })?;
         let remote_udp_port = be_u16(&hello[2..4]);
         if remote_udp_port != 0 {
             let remote_udp = SocketAddr::new(address.ip(), remote_udp_port);
@@ -136,7 +158,9 @@ impl Session {
         // continue in v1 so older firmware is still reachable.
         session.send_util(&[0x04, 0x03])?;
         let v2_deadline = Instant::now() + Duration::from_millis(650);
-        match session.wait_for_util_optional(v2_deadline, |body| body.len() >= 2 && body[0] == 0x05 && body[1] == 0x03)? {
+        match session.wait_for_util_optional(v2_deadline, |body| {
+            body.len() >= 2 && body[0] == 0x05 && body[1] == 0x03
+        })? {
             Some(_) => {
                 session.version = AhNetVersion::V2;
                 trace("AH-Net v2".into());
@@ -155,7 +179,11 @@ impl Session {
         ))?;
         let deadline = Instant::now() + Duration::from_secs(3);
         while Instant::now() < deadline {
-            let received = self.recv_net_until(deadline)?;
+            let received = match self.recv_net_until(deadline) {
+                Ok(received) => received,
+                Err(BackupError::Timeout(_)) => break,
+                Err(error) => return Err(error),
+            };
             match received.message.function {
                 REGISTRY_FOUND_OBJECT if received.message.payload.len() >= 2 => {
                     let object = if received.message.payload.len() >= 4 {
@@ -164,40 +192,71 @@ impl Session {
                         be_u16(&received.message.payload[..2])
                     };
                     if object == 0 {
-                        return Err(BackupError::Protocol("Avantis returned an invalid Show File Manager handle.".into()));
+                        return Err(BackupError::Protocol(
+                            "Avantis returned an invalid Show File Manager handle.".into(),
+                        ));
                     }
                     trace(format!("Show File Manager object 0x{object:04X}"));
                     return Ok(object);
                 }
                 REGISTRY_OBJECT_NOT_FOUND => {
-                    return Err(BackupError::Protocol("The Avantis did not expose its Show File Manager.".into()));
+                    return Err(BackupError::Protocol(
+                        "The Avantis did not expose its Show File Manager.".into(),
+                    ));
                 }
                 _ => {}
             }
         }
-        Err(BackupError::Timeout("Timed out while finding the Avantis Show File Manager.".into()))
+        Err(BackupError::Timeout(
+            "Timed out while finding the Avantis Show File Manager.".into(),
+        ))
     }
 
     fn find_stored_show(&mut self, show_manager: u16, requested: &str) -> Result<ShowKey> {
-        self.send_net_tcp(&NetMessage::new(show_manager, LOCAL_OBJECT, SHOW_MANAGER_SYNC, vec![]))?;
+        self.send_net_tcp(&NetMessage::new(
+            show_manager,
+            LOCAL_OBJECT,
+            SHOW_MANAGER_SYNC,
+            vec![],
+        ))?;
         let deadline = Instant::now() + Duration::from_secs(5);
         let mut available = BTreeSet::new();
         let mut fallback_match: Option<ShowKey> = None;
+        let mut fallback_settle_deadline: Option<Instant> = None;
         let mut sync_retried = false;
 
         while Instant::now() < deadline {
-            let received = self.recv_net_until(deadline)?;
+            let receive_deadline = fallback_settle_deadline
+                .map(|settle| settle.min(deadline))
+                .unwrap_or(deadline);
+            let received = match self.recv_net_until(receive_deadline) {
+                Ok(received) => received,
+                Err(BackupError::Timeout(_)) => break,
+                Err(error) => return Err(error),
+            };
             if received.message.function == SHOW_SYNC_READY && !sync_retried {
                 // Some firmware advertises readiness before it emits the catalogue.
-                self.send_net_tcp(&NetMessage::new(show_manager, LOCAL_OBJECT, SHOW_MANAGER_SYNC, vec![]))?;
+                self.send_net_tcp(&NetMessage::new(
+                    show_manager,
+                    LOCAL_OBJECT,
+                    SHOW_MANAGER_SYNC,
+                    vec![],
+                ))?;
                 sync_retried = true;
                 continue;
             }
             if received.message.function != SHOW_ADDED {
                 continue;
             }
+            if received.message.source != show_manager {
+                continue;
+            }
             let key = ShowKey::parse(&received.message.payload)?;
-            trace(format!("show location={} name={}", key.location(), key.name()));
+            trace(format!(
+                "show location={} name={}",
+                key.location(),
+                key.name()
+            ));
 
             // Factory and USB locations are not console-stored User Shows. Reverse engineering
             // of Director V2.01 maps User Show storage to location 4; location 2 is accepted only
@@ -211,28 +270,13 @@ impl Session {
                 }
                 if !matches!(key.location(), 0 | 1) {
                     fallback_match = Some(key);
+                    fallback_settle_deadline = Some(Instant::now() + Duration::from_millis(250));
                 }
             }
-            if fallback_match.is_some() && sync_retried {
-                // Continue briefly in case the explicit User Show entry follows an internal copy.
-                let settle = Instant::now() + Duration::from_millis(250);
-                while Instant::now() < settle {
-                    match self.recv_net_until(settle) {
-                        Ok(next) if next.message.function == SHOW_ADDED => {
-                            let next_key = ShowKey::parse(&next.message.payload)?;
-                            if !matches!(next_key.location(), 0 | 1) {
-                                available.insert(next_key.name().to_string());
-                            }
-                            if next_key.location() == 4 && next_key.name().eq_ignore_ascii_case(requested) {
-                                return Ok(next_key);
-                            }
-                        }
-                        Ok(_) => {}
-                        Err(BackupError::Timeout(_)) => break,
-                        Err(error) => return Err(error),
-                    }
-                }
-                return Ok(fallback_match.expect("checked above"));
+            if fallback_match.is_some() {
+                // Keep listening until the catalogue has been quiet briefly in case the explicit
+                // User Show entry follows an internal compatibility copy.
+                fallback_settle_deadline = Some(Instant::now() + Duration::from_millis(250));
             }
         }
 
@@ -245,7 +289,12 @@ impl Session {
         })
     }
 
-    fn download_show(&mut self, show_manager: u16, key: &ShowKey, destination: &Path) -> Result<BackupOutcome> {
+    fn download_show(
+        &mut self,
+        show_manager: u16,
+        key: &ShowKey,
+        destination: &Path,
+    ) -> Result<BackupOutcome> {
         fs::create_dir_all(destination)?;
         let usb_directory = usb_show_directory(destination);
         fs::create_dir_all(&usb_directory)?;
@@ -257,13 +306,14 @@ impl Session {
             key.download_payload(),
         ))?;
 
-        let temp_path = destination.join(format!(".stage-backup-{}-{}.partial", std::process::id(), monotonic_tag()));
+        let mut temp_path: Option<PathBuf> = None;
         let mut temp_file: Option<File> = None;
         let mut source_name = String::new();
         let mut expected_packets = 0u16;
         let mut packets = 0u16;
         let mut expected_bytes = 0u64;
         let mut bytes_written = 0u64;
+        let mut file_sender: Option<u16> = None;
         let deadline = Instant::now() + Duration::from_secs(120);
 
         let transfer_result = (|| -> Result<()> {
@@ -272,26 +322,40 @@ impl Session {
                 if !matches!(received.message.function, FILE_HEADER | FILE_BODY) {
                     continue;
                 }
+                if file_sender.is_some_and(|source| source != received.message.source) {
+                    continue;
+                }
 
                 let packet_result = if received.message.function == FILE_HEADER {
                     if temp_file.is_some() {
-                        Err(BackupError::Protocol("Avantis sent more than one Show file header.".into()))
+                        Err(BackupError::Protocol(
+                            "Avantis sent more than one Show file header.".into(),
+                        ))
                     } else {
                         let header = FileHeader::parse(&received.message.payload)?;
                         if header.file_size > MAX_SHOW_BYTES {
-                            Err(BackupError::Protocol("The Show archive reported an unexpected size.".into()))
+                            Err(BackupError::Protocol(
+                                "The Show archive reported an unexpected size.".into(),
+                            ))
                         } else if header.packet_count == 0 {
-                            Err(BackupError::Protocol("The Show archive reported zero transfer packets.".into()))
+                            Err(BackupError::Protocol(
+                                "The Show archive reported zero transfer packets.".into(),
+                            ))
                         } else {
                             source_name = header.file_name;
+                            file_sender = Some(received.message.source);
                             expected_packets = header.packet_count;
                             expected_bytes = header.file_size;
                             if header.initial_data.len() as u64 > expected_bytes {
-                                return Err(BackupError::Protocol("The first Show packet exceeded the archive size declared.".into()));
+                                return Err(BackupError::Protocol(
+                                    "The first Show packet exceeded the archive size declared."
+                                        .into(),
+                                ));
                             }
-                            let mut file = File::create(&temp_path)?;
+                            let (path, mut file) = create_partial_file(&usb_directory)?;
                             file.write_all(header.initial_data)?;
                             bytes_written += header.initial_data.len() as u64;
+                            temp_path = Some(path);
                             temp_file = Some(file);
                             packets = 1;
                             Ok(())
@@ -300,11 +364,15 @@ impl Session {
                 } else {
                     let Some(file) = temp_file.as_mut() else {
                         self.send_transfer_reply(&received, FILE_ERROR)?;
-                        return Err(BackupError::Protocol("Avantis sent Show data before its file header.".into()));
+                        return Err(BackupError::Protocol(
+                            "Avantis sent Show data before its file header.".into(),
+                        ));
                     };
                     let remaining = expected_bytes.saturating_sub(bytes_written);
                     if received.message.payload.len() as u64 > remaining {
-                        Err(BackupError::Protocol("Avantis sent more Show data than the archive size declared.".into()))
+                        Err(BackupError::Protocol(
+                            "Avantis sent more Show data than the archive size declared.".into(),
+                        ))
                     } else {
                         file.write_all(&received.message.payload)?;
                         bytes_written += received.message.payload.len() as u64;
@@ -327,7 +395,9 @@ impl Session {
             }
 
             if temp_file.is_none() {
-                return Err(BackupError::Timeout("Timed out waiting for the Avantis to send the Show archive.".into()));
+                return Err(BackupError::Timeout(
+                    "Timed out waiting for the Avantis to send the Show archive.".into(),
+                ));
             }
             if packets != expected_packets || bytes_written != expected_bytes {
                 return Err(BackupError::Protocol(format!(
@@ -342,29 +412,45 @@ impl Session {
         })();
 
         if let Err(error) = transfer_result {
-            let _ = fs::remove_file(&temp_path);
+            if let Some(path) = temp_path.as_ref() {
+                let _ = fs::remove_file(path);
+            }
             return Err(error);
         }
         drop(temp_file);
+        let temp_path = temp_path.ok_or_else(|| {
+            BackupError::Protocol("The Show transfer completed without a temporary file.".into())
+        })?;
 
         // Show archives observed in Director are gzip-compressed tar files. Check the signature,
         // but do not unpack/repack or otherwise alter the bytes received from the console.
         let mut signature = [0u8; 2];
-        if let Err(error) = File::open(&temp_path).and_then(|mut file| file.read_exact(&mut signature)) {
+        if let Err(error) =
+            File::open(&temp_path).and_then(|mut file| file.read_exact(&mut signature))
+        {
             let _ = fs::remove_file(&temp_path);
             return Err(error.into());
         }
         if signature != [0x1F, 0x8B] {
             let _ = fs::remove_file(&temp_path);
-            return Err(BackupError::Protocol("The downloaded Show did not have the expected gzip archive signature.".into()));
+            return Err(BackupError::Protocol(
+                "The downloaded Show did not have the expected gzip archive signature.".into(),
+            ));
         }
 
         let mut final_path = usb_directory.join(dated_archive_name(
-            if source_name.trim().is_empty() { key.name() } else { &source_name },
+            if source_name.trim().is_empty() {
+                key.name()
+            } else {
+                &source_name
+            },
             SystemTime::now(),
         ));
         final_path = unique_path(final_path);
-        fs::rename(&temp_path, &final_path)?;
+        if let Err(error) = fs::rename(&temp_path, &final_path) {
+            let _ = fs::remove_file(&temp_path);
+            return Err(error.into());
+        }
 
         Ok(BackupOutcome {
             path: final_path,
@@ -389,14 +475,24 @@ impl Session {
     }
 
     fn send_net_tcp(&mut self, message: &NetMessage) -> Result<()> {
-        trace(format!("tx tcp fn=0x{:04X} target=0x{:04X} bytes={}", message.function, message.target, message.payload.len()));
+        trace(format!(
+            "tx tcp fn=0x{:04X} target=0x{:04X} bytes={}",
+            message.function,
+            message.target,
+            message.payload.len()
+        ));
         let bytes = encode_net(self.version, message)?;
         self.tcp.write_all(&bytes)?;
         Ok(())
     }
 
     fn send_net_udp(&mut self, message: &NetMessage) -> Result<()> {
-        trace(format!("tx udp fn=0x{:04X} target=0x{:04X} bytes={}", message.function, message.target, message.payload.len()));
+        trace(format!(
+            "tx udp fn=0x{:04X} target=0x{:04X} bytes={}",
+            message.function,
+            message.target,
+            message.payload.len()
+        ));
         let bytes = encode_net(self.version, message)?;
         self.udp.send(&bytes)?;
         Ok(())
@@ -406,12 +502,17 @@ impl Session {
     where
         F: Fn(&[u8]) -> bool,
     {
-        self.wait_for_util_optional(deadline, predicate)?.ok_or_else(|| {
-            BackupError::Timeout("Timed out during the AH-Net connection handshake.".into())
-        })
+        self.wait_for_util_optional(deadline, predicate)?
+            .ok_or_else(|| {
+                BackupError::Timeout("Timed out during the AH-Net connection handshake.".into())
+            })
     }
 
-    fn wait_for_util_optional<F>(&mut self, deadline: Instant, predicate: F) -> Result<Option<Vec<u8>>>
+    fn wait_for_util_optional<F>(
+        &mut self,
+        deadline: Instant,
+        predicate: F,
+    ) -> Result<Option<Vec<u8>>>
     where
         F: Fn(&[u8]) -> bool,
     {
@@ -428,18 +529,42 @@ impl Session {
 
     fn recv_net_until(&mut self, deadline: Instant) -> Result<ReceivedNet> {
         while Instant::now() < deadline {
-            if let Some(index) = self.queued.iter().position(|frame| matches!(frame, WireFrame::Net(_))) {
+            if let Some(index) = self
+                .queued
+                .iter()
+                .position(|frame| matches!(frame, WireFrame::Net(_)))
+            {
                 if let Some(WireFrame::Net(message)) = self.queued.remove(index) {
-                    trace(format!("rx queued fn=0x{:04X} source=0x{:04X} bytes={}", message.function, message.source, message.payload.len()));
-                    return Ok(ReceivedNet { message, transport: Transport::Tcp });
+                    trace(format!(
+                        "rx queued fn=0x{:04X} source=0x{:04X} bytes={}",
+                        message.function,
+                        message.source,
+                        message.payload.len()
+                    ));
+                    return Ok(ReceivedNet {
+                        message,
+                        transport: Transport::Tcp,
+                    });
                 }
             }
 
-            if let Some(frame) = self.next_tcp_frame(Instant::now() + Duration::from_millis(80).min(deadline.saturating_duration_since(Instant::now())))? {
+            if let Some(frame) = self.next_tcp_frame(
+                Instant::now()
+                    + Duration::from_millis(80)
+                        .min(deadline.saturating_duration_since(Instant::now())),
+            )? {
                 match frame {
                     WireFrame::Net(message) => {
-                        trace(format!("rx tcp fn=0x{:04X} source=0x{:04X} bytes={}", message.function, message.source, message.payload.len()));
-                        return Ok(ReceivedNet { message, transport: Transport::Tcp });
+                        trace(format!(
+                            "rx tcp fn=0x{:04X} source=0x{:04X} bytes={}",
+                            message.function,
+                            message.source,
+                            message.payload.len()
+                        ));
+                        return Ok(ReceivedNet {
+                            message,
+                            transport: Transport::Tcp,
+                        });
                     }
                     util => self.queued.push_back(util),
                 }
@@ -449,16 +574,30 @@ impl Session {
             match self.udp.recv(&mut datagram) {
                 Ok(length) => {
                     if let Some(WireFrame::Net(message)) = decode_datagram(&datagram[..length])? {
-                        trace(format!("rx udp fn=0x{:04X} source=0x{:04X} bytes={}", message.function, message.source, message.payload.len()));
-                        return Ok(ReceivedNet { message, transport: Transport::Udp });
+                        trace(format!(
+                            "rx udp fn=0x{:04X} source=0x{:04X} bytes={}",
+                            message.function,
+                            message.source,
+                            message.payload.len()
+                        ));
+                        return Ok(ReceivedNet {
+                            message,
+                            transport: Transport::Udp,
+                        });
                     }
                 }
-                Err(error) if matches!(error.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {}
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                    ) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::NotConnected => {}
                 Err(error) => return Err(error.into()),
             }
         }
-        Err(BackupError::Timeout("Timed out waiting for the Avantis.".into()))
+        Err(BackupError::Timeout(
+            "Timed out waiting for the Avantis.".into(),
+        ))
     }
 
     fn next_tcp_frame(&mut self, deadline: Instant) -> Result<Option<WireFrame>> {
@@ -468,14 +607,25 @@ impl Session {
         while Instant::now() < deadline {
             let mut buffer = [0u8; 16_384];
             match self.tcp.read(&mut buffer) {
-                Ok(0) => return Err(BackupError::Protocol("The Avantis closed the network connection.".into())),
+                Ok(0) => {
+                    return Err(BackupError::Protocol(
+                        "The Avantis closed the network connection.".into(),
+                    ))
+                }
                 Ok(length) => {
                     self.decoder.push(&buffer[..length]);
                     if let Some(frame) = self.decoder.next()? {
                         return Ok(Some(frame));
                     }
                 }
-                Err(error) if matches!(error.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => return Ok(None),
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                    ) =>
+                {
+                    return Ok(None)
+                }
                 Err(error) => return Err(error.into()),
             }
         }
@@ -493,19 +643,28 @@ struct FileHeader<'a> {
 impl<'a> FileHeader<'a> {
     fn parse(payload: &'a [u8]) -> Result<Self> {
         if payload.len() < 9 {
-            return Err(BackupError::Protocol("Avantis sent a truncated Show file header.".into()));
+            return Err(BackupError::Protocol(
+                "Avantis sent a truncated Show file header.".into(),
+            ));
         }
         let header_len = be_u16(&payload[0..2]) as usize;
         let packet_count = be_u16(&payload[2..4]);
         let file_size = be_u32(&payload[4..8]) as u64;
         if header_len < 9 || header_len > payload.len() {
-            return Err(BackupError::Protocol("Avantis sent an invalid Show file header length.".into()));
+            return Err(BackupError::Protocol(
+                "Avantis sent an invalid Show file header length.".into(),
+            ));
         }
         let name_area = &payload[8..header_len];
-        let nul = name_area.iter().position(|byte| *byte == 0).unwrap_or(name_area.len());
+        let nul = name_area
+            .iter()
+            .position(|byte| *byte == 0)
+            .unwrap_or(name_area.len());
         let file_name: String = name_area[..nul].iter().copied().map(char::from).collect();
         if file_name.contains('/') || file_name.contains('\\') {
-            return Err(BackupError::Protocol("Avantis sent an unsafe Show archive name.".into()));
+            return Err(BackupError::Protocol(
+                "Avantis sent an unsafe Show archive name.".into(),
+            ));
         }
         Ok(Self {
             packet_count,
@@ -518,9 +677,25 @@ impl<'a> FileHeader<'a> {
 
 fn resolve_endpoint(endpoint: &str) -> Result<SocketAddr> {
     let endpoint = endpoint.trim();
-    let with_port = if endpoint.starts_with('[') {
-        if endpoint.rsplit_once("]:" ).is_some() { endpoint.to_string() } else { format!("{endpoint}:{DEFAULT_AHNET_PORT}") }
-    } else if endpoint.rsplit_once(':').is_some_and(|(_, port)| port.parse::<u16>().is_ok()) {
+    if let Ok(address) = endpoint.parse::<SocketAddr>() {
+        return Ok(address);
+    }
+    if let Ok(ip) = endpoint.parse::<IpAddr>() {
+        return Ok(SocketAddr::new(ip, DEFAULT_AHNET_PORT));
+    }
+    if let Some(bracketed_ip) = endpoint
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        if let Ok(ip) = bracketed_ip.parse::<IpAddr>() {
+            return Ok(SocketAddr::new(ip, DEFAULT_AHNET_PORT));
+        }
+    }
+
+    let with_port = if endpoint
+        .rsplit_once(':')
+        .is_some_and(|(_, port)| port.parse::<u16>().is_ok())
+    {
         endpoint.to_string()
     } else {
         format!("{endpoint}:{DEFAULT_AHNET_PORT}")
@@ -529,7 +704,30 @@ fn resolve_endpoint(endpoint: &str) -> Result<SocketAddr> {
         .to_socket_addrs()
         .map_err(BackupError::Io)?
         .next()
-        .ok_or_else(|| BackupError::InvalidInput("The Avantis address could not be resolved.".into()))
+        .ok_or_else(|| {
+            BackupError::InvalidInput("The Avantis address could not be resolved.".into())
+        })
+}
+
+fn create_partial_file(directory: &Path) -> Result<(PathBuf, File)> {
+    let base = format!(".stage-backup-{}-{}", std::process::id(), monotonic_tag());
+    for index in 1..=9999 {
+        let suffix = if index == 1 {
+            String::new()
+        } else {
+            format!("-{index}")
+        };
+        let path = directory.join(format!("{base}{suffix}.partial"));
+        match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(file) => return Ok((path, file)),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Err(BackupError::Io(std::io::Error::new(
+        std::io::ErrorKind::AlreadyExists,
+        "Could not allocate a unique temporary backup file.",
+    )))
 }
 
 fn unique_path(path: PathBuf) -> PathBuf {
@@ -537,7 +735,10 @@ fn unique_path(path: PathBuf) -> PathBuf {
         return path;
     }
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
-    let file_name = path.file_name().and_then(|value| value.to_str()).unwrap_or("Show.tar.gz");
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("Show.tar.gz");
     let stem = file_name.strip_suffix(".tar.gz").unwrap_or(file_name);
     for index in 2..=9999 {
         let candidate = parent.join(format!("{stem}_{index}.tar.gz"));
@@ -580,5 +781,21 @@ mod tests {
         assert_eq!(parsed.file_size, 1234);
         assert_eq!(parsed.file_name, "Sunday.tar.gz");
         assert_eq!(parsed.initial_data, &[0x1f, 0x8b, 1, 2]);
+    }
+
+    #[test]
+    fn resolves_ip_addresses_with_the_default_port() {
+        assert_eq!(
+            resolve_endpoint("127.0.0.1").unwrap(),
+            SocketAddr::new(IpAddr::from([127, 0, 0, 1]), DEFAULT_AHNET_PORT)
+        );
+        assert_eq!(
+            resolve_endpoint("::1").unwrap(),
+            SocketAddr::new(IpAddr::from([0, 0, 0, 0, 0, 0, 0, 1]), DEFAULT_AHNET_PORT)
+        );
+        assert_eq!(
+            resolve_endpoint("[::1]").unwrap(),
+            SocketAddr::new(IpAddr::from([0, 0, 0, 0, 0, 0, 0, 1]), DEFAULT_AHNET_PORT)
+        );
     }
 }

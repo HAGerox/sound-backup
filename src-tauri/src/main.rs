@@ -1,7 +1,7 @@
 mod providers;
 
 use serde::{Deserialize, Serialize};
-use std::{fs, path::PathBuf};
+use std::{fs, path::PathBuf, sync::Mutex};
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
@@ -29,23 +29,40 @@ struct BackupResponse {
     show_name: String,
 }
 
+#[derive(Default)]
+struct AppState {
+    settings_lock: Mutex<()>,
+}
+
 #[tauri::command]
 fn load_settings(app: tauri::AppHandle) -> Result<Settings, String> {
     let path = settings_path(&app)?;
     match fs::read_to_string(path) {
-        Ok(json) => serde_json::from_str(&json).map_err(|error| format!("Could not read settings: {error}")),
+        Ok(json) => {
+            serde_json::from_str(&json).map_err(|error| format!("Could not read settings: {error}"))
+        }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Settings::default()),
         Err(error) => Err(format!("Could not read settings: {error}")),
     }
 }
 
 #[tauri::command]
-fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), String> {
+fn save_settings(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    settings: Settings,
+) -> Result<(), String> {
+    let _guard = state
+        .settings_lock
+        .lock()
+        .map_err(|_| "Could not lock the settings file.".to_string())?;
     let path = settings_path(&app)?;
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| format!("Could not create the settings folder: {error}"))?;
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Could not create the settings folder: {error}"))?;
     }
-    let json = serde_json::to_vec_pretty(&settings).map_err(|error| format!("Could not encode settings: {error}"))?;
+    let json = serde_json::to_vec_pretty(&settings)
+        .map_err(|error| format!("Could not encode settings: {error}"))?;
     let temporary = path.with_extension("json.tmp");
     fs::write(&temporary, json).map_err(|error| format!("Could not save settings: {error}"))?;
     fs::rename(&temporary, &path).map_err(|error| format!("Could not save settings: {error}"))?;
@@ -104,6 +121,7 @@ fn settings_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 
 fn main() {
     tauri::Builder::default()
+        .manage(AppState::default())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             load_settings,

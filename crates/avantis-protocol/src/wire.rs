@@ -65,7 +65,12 @@ pub(crate) fn encode_net(version: AhNetVersion, message: &NetMessage) -> Result<
     match version {
         AhNetVersion::V1 => {
             out.push(NET_V1_START);
-            for value in [message.connection, message.target, message.source, message.function] {
+            for value in [
+                message.connection,
+                message.target,
+                message.source,
+                message.function,
+            ] {
                 out.extend_from_slice(&value.to_be_bytes());
             }
             out.extend_from_slice(&length.to_be_bytes());
@@ -74,7 +79,12 @@ pub(crate) fn encode_net(version: AhNetVersion, message: &NetMessage) -> Result<
         }
         AhNetVersion::V2 => {
             out.push(NET_V2_START);
-            for value in [message.connection, message.target, message.source, message.function] {
+            for value in [
+                message.connection,
+                message.target,
+                message.source,
+                message.function,
+            ] {
                 out.extend_from_slice(&value.to_be_bytes());
                 out.extend_from_slice(&[0, 0]);
             }
@@ -126,7 +136,9 @@ impl WireDecoder {
         }
         if self.buffer[total - 1] != UTIL_END {
             self.buffer.remove(0);
-            return Err(BackupError::Protocol("Malformed AH-Net utility frame.".into()));
+            return Err(BackupError::Protocol(
+                "Malformed AH-Net utility frame.".into(),
+            ));
         }
         let body = self.buffer[3..3 + payload_len].to_vec();
         self.buffer.drain(..total);
@@ -237,6 +249,9 @@ mod tests {
         let bytes = encode_util(&[1, 3, 0xCA, 0x79]).unwrap();
         let mut decoder = WireDecoder::default();
         decoder.push(&bytes);
-        assert_eq!(decoder.next().unwrap(), Some(WireFrame::Util(vec![1, 3, 0xCA, 0x79])));
+        assert_eq!(
+            decoder.next().unwrap(),
+            Some(WireFrame::Util(vec![1, 3, 0xCA, 0x79]))
+        );
     }
 }
