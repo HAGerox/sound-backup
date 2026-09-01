@@ -1,0 +1,9 @@
+[package]
+name = "avantis-protocol"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Minimal AH-Net interoperability layer for read-only Avantis Show backups"
+
+[lib]
+path = "src/lib.rs"

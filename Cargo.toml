@@ -1,0 +1,3 @@
+[workspace]
+members = ["crates/avantis-protocol", "src-tauri"]
+resolver = "2"

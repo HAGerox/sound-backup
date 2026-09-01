@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Stage Backup</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <h1>Backup</h1>
+      </header>
+
+      <section class="panel" aria-labelledby="avantis-heading">
+        <div class="section-heading">
+          <h2 id="avantis-heading">Avantis</h2>
+          <button id="testButton" class="text-button" type="button">Test connection</button>
+        </div>
+
+        <form id="backupForm" novalidate>
+          <label class="field">
+            <span>Console address</span>
+            <input id="consoleAddress" name="consoleAddress" autocomplete="off" inputmode="url" placeholder="192.168.1.50" />
+          </label>
+
+          <label class="field">
+            <span>Stored Show</span>
+            <input id="showName" name="showName" autocomplete="off" maxlength="16" placeholder="Sunday" />
+          </label>
+
+          <div class="field">
+            <span>Backup folder</span>
+            <div class="folder-row">
+              <input id="backupFolder" name="backupFolder" readonly placeholder="Choose a folder" />
+              <button id="chooseFolderButton" class="secondary-button" type="button">Choose</button>
+            </div>
+          </div>
+
+          <p class="note">This backs up the stored Show. Store or overwrite the Show on the console first if you need current desk changes.</p>
+          <p class="path-note">Files are saved under <code>AllenHeath-Avantis/Shows</code>.</p>
+
+          <button id="backupButton" class="primary-button" type="submit">Back up show</button>
+        </form>
+      </section>
+
+      <section id="status" class="status" aria-live="polite" aria-atomic="true">
+        <span id="statusText">Ready.</span>
+        <span id="statusPath" class="status-path"></span>
+      </section>
+    </main>
+    <script src="app.js" defer></script>
+  </body>
+</html>
