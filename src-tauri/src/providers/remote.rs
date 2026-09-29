@@ -211,9 +211,9 @@ mod tests {
         let connection = Connection {
             host: "QLab-Mac.local".to_string(),
             port: 0,
-            username: " finn ".to_string(),
+            username: " operator ".to_string(),
             ..Connection::default()
         };
-        assert_eq!(password_account(&connection), "finn@qlab-mac.local:22");
+        assert_eq!(password_account(&connection), "operator@qlab-mac.local:22");
     }
 }

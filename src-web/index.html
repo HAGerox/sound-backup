@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
-    <title>Stage Backup</title>
+    <title>Sound Backup</title>
     <link rel="stylesheet" href="vendor/fontawesome/css/fontawesome.min.css" />
     <link rel="stylesheet" href="vendor/fontawesome/css/solid.min.css" />
     <link rel="stylesheet" href="styles.css" />
@@ -13,7 +13,7 @@
     <main class="app-shell">
       <section id="homeView" class="view home-view" aria-labelledby="homeTitle">
         <header class="topbar">
-          <h1 id="homeTitle" class="sr-only">Stage Backup</h1>
+          <h1 id="homeTitle" class="sr-only">Sound Backup</h1>
           <button id="settingsButton" class="icon-button" type="button" aria-label="Open settings">
             <i class="fa-solid fa-gear" aria-hidden="true"></i>
           </button>
@@ -37,6 +37,24 @@
               </span>
               <span class="device-name">QLab</span>
               <span id="qlabIndicatorStatus" class="device-state">Set up</span>
+            </button>
+
+            <button id="micwiseIndicator" class="device-indicator" data-state="not-configured" type="button" aria-label="Set up Mic-Wise">
+              <span class="device-icon">
+                <i class="fa-solid fa-microphone" aria-hidden="true"></i>
+                <span class="connection-dot"></span>
+              </span>
+              <span class="device-name">Mic-Wise</span>
+              <span id="micwiseIndicatorStatus" class="device-state">Set up</span>
+            </button>
+
+            <button id="slinkrackIndicator" class="device-indicator" data-state="not-configured" type="button" aria-label="Set up SLink-Rack">
+              <span class="device-icon">
+                <i class="fa-solid fa-server" aria-hidden="true"></i>
+                <span class="connection-dot"></span>
+              </span>
+              <span class="device-name">SLink-Rack</span>
+              <span id="slinkrackIndicatorStatus" class="device-state">Set up</span>
             </button>
           </div>
 
@@ -188,6 +206,68 @@
                   </div>
                   <div id="qlabLoginStatus" class="inline-status" aria-live="polite"></div>
                 </div>
+              </div>
+            </article>
+
+            <article id="micwiseSettingsCard" class="device-card">
+              <header class="device-card-header">
+                <span class="card-device-icon">
+                  <i class="fa-solid fa-microphone" aria-hidden="true"></i>
+                </span>
+                <strong class="card-device-name">Mic-Wise</strong>
+              </header>
+
+              <div class="device-card-body">
+                <div class="discovery-heading">
+                  <h3>Radio mic show</h3>
+                  <button id="micwiseDiscoverButton" class="secondary-button compact" type="button">
+                    <i class="fa-solid fa-rotate" aria-hidden="true"></i>
+                    <span id="micwiseDiscoverButtonLabel">Scan</span>
+                  </button>
+                </div>
+                <div id="micwiseDiscoveryStatus" class="inline-status" aria-live="polite"></div>
+                <div id="micwiseInstanceChoices" class="choice-list" role="radiogroup" aria-label="Mic-Wise shows"></div>
+
+                <details class="manual-settings">
+                  <summary>Connect by address</summary>
+                  <div class="manual-address-row">
+                    <label class="sr-only" for="micwiseAddress">Mic-Wise address</label>
+                    <input id="micwiseAddress" autocomplete="off" inputmode="url" placeholder="http://10.0.0.4:8000" />
+                    <button id="micwiseConnectButton" class="secondary-button" type="button">Connect</button>
+                  </div>
+                </details>
+                <div id="micwiseStatus" class="inline-status" aria-live="polite"></div>
+              </div>
+            </article>
+
+            <article id="slinkrackSettingsCard" class="device-card">
+              <header class="device-card-header">
+                <span class="card-device-icon">
+                  <i class="fa-solid fa-server" aria-hidden="true"></i>
+                </span>
+                <strong class="card-device-name">SLink-Rack</strong>
+              </header>
+
+              <div class="device-card-body">
+                <div class="discovery-heading">
+                  <h3>Insert rack</h3>
+                  <button id="slinkrackDiscoverButton" class="secondary-button compact" type="button">
+                    <i class="fa-solid fa-rotate" aria-hidden="true"></i>
+                    <span id="slinkrackDiscoverButtonLabel">Scan</span>
+                  </button>
+                </div>
+                <div id="slinkrackDiscoveryStatus" class="inline-status" aria-live="polite"></div>
+                <div id="slinkrackInstanceChoices" class="choice-list" role="radiogroup" aria-label="SLink-Rack instances"></div>
+
+                <details class="manual-settings">
+                  <summary>Connect by address</summary>
+                  <div class="manual-address-row">
+                    <label class="sr-only" for="slinkrackAddress">SLink-Rack address</label>
+                    <input id="slinkrackAddress" autocomplete="off" inputmode="url" placeholder="http://192.168.130.18:8080" />
+                    <button id="slinkrackConnectButton" class="secondary-button" type="button">Connect</button>
+                  </div>
+                </details>
+                <div id="slinkrackStatus" class="inline-status" aria-live="polite"></div>
               </div>
             </article>
           </section>

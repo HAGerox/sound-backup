@@ -12,9 +12,18 @@ const emptySettings = () => ({
       instance: { host: '', address: '', hostname: '', name: '', oscPort: 53000, local: false },
       remote: emptyRemote(),
       selectedWorkspaces: []
-    }
+    },
+    micwise: { endpoint: '', showName: '' },
+    slinkRack: { endpoint: '', instanceName: '' }
   }
 });
+
+const PROVIDERS = {
+  avantis: 'Avantis',
+  qlab: 'QLab',
+  micwise: 'Mic-Wise',
+  slinkrack: 'SLink-Rack'
+};
 
 async function invoke(command, arguments_) {
   if (nativeInvoke) return nativeInvoke(command, arguments_);
@@ -22,7 +31,7 @@ async function invoke(command, arguments_) {
   if (command === 'save_settings') return;
   if (command === 'open_remote_login_settings') return;
   if (command.startsWith('discover_') || command.startsWith('load_')) return [];
-  throw new Error('This action is available in the Stage Backup desktop app.');
+  throw new Error('This action is available in the Sound Backup desktop app.');
 }
 
 const $ = selector => document.querySelector(selector);
@@ -51,6 +60,18 @@ const elements = {
   qlabUsername: $('#qlabUsername'), qlabPassword: $('#qlabPassword'),
   qlabConnectButton: $('#qlabConnectButton'), qlabLoginStatus: $('#qlabLoginStatus'),
   qlabRemoteLoginHelp: $('#qlabRemoteLoginHelp'),
+  micwiseIndicator: $('#micwiseIndicator'), micwiseIndicatorStatus: $('#micwiseIndicatorStatus'),
+  micwiseSettingsCard: $('#micwiseSettingsCard'), micwiseDiscoverButton: $('#micwiseDiscoverButton'),
+  micwiseDiscoverButtonLabel: $('#micwiseDiscoverButtonLabel'),
+  micwiseDiscoveryStatus: $('#micwiseDiscoveryStatus'), micwiseInstanceChoices: $('#micwiseInstanceChoices'),
+  micwiseAddress: $('#micwiseAddress'), micwiseConnectButton: $('#micwiseConnectButton'),
+  micwiseStatus: $('#micwiseStatus'),
+  slinkrackIndicator: $('#slinkrackIndicator'), slinkrackIndicatorStatus: $('#slinkrackIndicatorStatus'),
+  slinkrackSettingsCard: $('#slinkrackSettingsCard'), slinkrackDiscoverButton: $('#slinkrackDiscoverButton'),
+  slinkrackDiscoverButtonLabel: $('#slinkrackDiscoverButtonLabel'),
+  slinkrackDiscoveryStatus: $('#slinkrackDiscoveryStatus'), slinkrackInstanceChoices: $('#slinkrackInstanceChoices'),
+  slinkrackAddress: $('#slinkrackAddress'), slinkrackConnectButton: $('#slinkrackConnectButton'),
+  slinkrackStatus: $('#slinkrackStatus'),
   toast: $('#toast'), toastIcon: $('#toastIcon'), toastTitle: $('#toastTitle'),
   toastDetail: $('#toastDetail'), toastCloseButton: $('#toastCloseButton')
 };
@@ -59,10 +80,12 @@ let settings = emptySettings();
 let availableShows = [];
 let discoveredAvantis = [];
 let discoveredQLab = [];
+let discoveredMicWise = [];
+let discoveredSLinkRack = [];
 let availableWorkspaces = [];
-let states = { avantis: 'not-configured', qlab: 'not-configured' };
+let states = { avantis: 'not-configured', qlab: 'not-configured', micwise: 'not-configured', slinkrack: 'not-configured' };
 let qlabAccessReady = new Set();
-let busy = { avantisScan: false, shows: false, qlabScan: false, qlab: false, connectionCheck: false, backup: false };
+let busy = { avantisScan: false, shows: false, qlabScan: false, qlab: false, micwiseScan: false, slinkrackScan: false, connectionCheck: false, backup: false };
 let saveTimer;
 let toastTimer;
 let hasAutoScanned = false;
@@ -101,6 +124,14 @@ function normaliseSettings(stored) {
       id: String(workspace?.id || ''), name: String(workspace?.name || ''),
       port: Number(workspace?.port || 53000), version: String(workspace?.version || '')
     })).filter(workspace => workspace.id) : [];
+  next.devices.micwise = {
+    endpoint: String(stored?.devices?.micwise?.endpoint || ''),
+    showName: String(stored?.devices?.micwise?.showName || '')
+  };
+  next.devices.slinkRack = {
+    endpoint: String(stored?.devices?.slinkRack?.endpoint || ''),
+    instanceName: String(stored?.devices?.slinkRack?.instanceName || '')
+  };
   return next;
 }
 
@@ -128,7 +159,7 @@ function setProviderState(provider, state) {
   const labels = { 'not-configured': 'Set up', checking: 'Checking…', connected: 'Connected', offline: 'Needs attention' };
   const indicator = elements[`${provider}Indicator`];
   const indicatorStatus = elements[`${provider}IndicatorStatus`];
-  const providerName = provider === 'qlab' ? 'QLab' : 'Avantis';
+  const providerName = PROVIDERS[provider];
   indicator.dataset.state = state;
   indicatorStatus.textContent = labels[state];
   indicator.setAttribute('aria-label', `${providerName}: ${labels[state]}`);
@@ -137,14 +168,16 @@ function setProviderState(provider, state) {
 
 function configuredProviders() {
   const providers = [];
-  if (settings.devices.avantis.endpoint && selectedShows().length) providers.push('Avantis');
+  if (settings.devices.avantis.endpoint && selectedShows().length) providers.push('avantis');
   const qlabRemoteReady = settings.devices.qlab.instance.local || Boolean(settings.devices.qlab.remote.fingerprint);
-  if (settings.devices.qlab.instance.host && selectedWorkspaces().length && qlabRemoteReady) providers.push('QLab');
+  if (settings.devices.qlab.instance.host && selectedWorkspaces().length && qlabRemoteReady) providers.push('qlab');
+  if (settings.devices.micwise.endpoint) providers.push('micwise');
+  if (settings.devices.slinkRack.endpoint) providers.push('slinkrack');
   return providers;
 }
 
 function connectedProviders() {
-  return configuredProviders().filter(provider => states[provider.toLocaleLowerCase()] === 'connected');
+  return configuredProviders().filter(provider => states[provider] === 'connected');
 }
 
 function renderHomeSummary() {
@@ -157,7 +190,10 @@ function renderHomeSummary() {
     : issue ? 'Set up backup' : waitingForConnection ? 'Check connections' : 'Back up';
   elements.backupButtonIcon.className = `fa-solid ${needsLocation ? 'fa-folder' : issue ? 'fa-arrow-right' : waitingForConnection ? 'fa-rotate' : 'fa-download'}`;
   elements.backupSummary.hidden = Boolean(issue) || waitingForConnection;
-  if (!issue && connected.length) elements.backupSummary.textContent = `${connected.join(' · ')} · ${fileName(settings.backupFolder)}`;
+  if (!issue && connected.length) {
+    elements.backupSummary.textContent =
+      `${connected.map(provider => PROVIDERS[provider]).join(' · ')} · ${fileName(settings.backupFolder)}`;
+  }
 }
 
 function renderLocation() {
@@ -249,11 +285,149 @@ function renderQLab() {
   elements.qlabUsername.value = qlab.remote.username;
 }
 
+function renderHttpChoices({ choicesElement, discovered, savedEndpoint, describe, radioName, onSelect }) {
+  const choices = [...discovered];
+  if (savedEndpoint && !choices.some(item => item.endpoint === savedEndpoint)) {
+    choices.unshift({ endpoint: savedEndpoint, name: 'Saved', showName: '', instance: '', racks: [] });
+  }
+  choicesElement.replaceChildren();
+  for (const item of choices) {
+    choicesElement.append(createDeviceChoice({
+      name: describe.name(item),
+      detail: describe.detail(item),
+      selected: item.endpoint === savedEndpoint,
+      radioName,
+      onChange: () => onSelect(item)
+    }));
+  }
+}
+
+function renderMicWise() {
+  const micwise = settings.devices.micwise;
+  renderHttpChoices({
+    choicesElement: elements.micwiseInstanceChoices,
+    discovered: discoveredMicWise,
+    savedEndpoint: micwise.endpoint,
+    describe: {
+      name: item => item.showName || micwise.showName || 'Mic-Wise',
+      detail: item => [item.endpoint, item.local ? 'This Mac' : '', item.version ? `v${item.version}` : '']
+        .filter(Boolean).join(' · ')
+    },
+    radioName: 'micwiseInstance',
+    onSelect: item => selectMicWise(item)
+  });
+  elements.micwiseAddress.value = micwise.endpoint;
+}
+
+function renderSLinkRack() {
+  const slink = settings.devices.slinkRack;
+  renderHttpChoices({
+    choicesElement: elements.slinkrackInstanceChoices,
+    discovered: discoveredSLinkRack,
+    savedEndpoint: slink.endpoint,
+    describe: {
+      name: item => item.instance || slink.instanceName || 'SLink-Rack',
+      detail: item => {
+        const racks = Array.isArray(item.racks) && item.racks.length ? `${item.racks.length} racks` : '';
+        return [item.endpoint, item.local ? 'This Mac' : '', racks].filter(Boolean).join(' · ');
+      }
+    },
+    radioName: 'slinkrackInstance',
+    onSelect: item => selectSLinkRack(item)
+  });
+  elements.slinkrackAddress.value = slink.endpoint;
+}
+
+async function selectMicWise(item) {
+  settings.devices.micwise.endpoint = item.endpoint;
+  settings.devices.micwise.showName = item.showName || settings.devices.micwise.showName;
+  saveSettingsSoon(); renderMicWise(); updateHttpProviderState('micwise');
+  try { await invoke('test_micwise', { input: { endpoint: item.endpoint } }); setProviderState('micwise', 'connected'); }
+  catch { setProviderState('micwise', 'offline'); }
+  renderHomeSummary();
+}
+
+async function selectSLinkRack(item) {
+  settings.devices.slinkRack.endpoint = item.endpoint;
+  settings.devices.slinkRack.instanceName = item.instance || settings.devices.slinkRack.instanceName;
+  saveSettingsSoon(); renderSLinkRack(); updateHttpProviderState('slinkrack');
+  try { await invoke('test_slink_rack', { input: { endpoint: item.endpoint } }); setProviderState('slinkrack', 'connected'); }
+  catch { setProviderState('slinkrack', 'offline'); }
+  renderHomeSummary();
+}
+
+function updateHttpProviderState(key) {
+  const configured = key === 'micwise' ? settings.devices.micwise.endpoint : settings.devices.slinkRack.endpoint;
+  setProviderState(key, configured ? 'checking' : 'not-configured');
+}
+
+async function scanHttpDevice({ key, label, busyKey, discoverCommand, addressElement, statusElement, labelElement, store, describeEmpty }) {
+  if (busy[busyKey]) return;
+  busy[busyKey] = true;
+  elements[addressElement] && (elements[addressElement].disabled = true);
+  elements[labelElement].textContent = 'Scanning';
+  setInlineStatus(elements[statusElement], `Looking for ${label}…`);
+  try {
+    const found = await invoke(discoverCommand, {
+      knownEndpoint: (key === 'micwise' ? settings.devices.micwise.endpoint : settings.devices.slinkRack.endpoint) || null
+    });
+    store.splice(0, store.length, ...(Array.isArray(found) ? found : []));
+    if (!store.length) setInlineStatus(elements[statusElement], describeEmpty);
+    else setInlineStatus(elements[statusElement], '');
+    if (key === 'micwise') renderMicWise(); else renderSLinkRack();
+    const saved = key === 'micwise' ? settings.devices.micwise.endpoint : settings.devices.slinkRack.endpoint;
+    if (!saved && store.length === 1) {
+      if (key === 'micwise') await selectMicWise(store[0]); else await selectSLinkRack(store[0]);
+    }
+  } catch (error) {
+    setInlineStatus(elements[statusElement], String(error), 'error');
+  } finally {
+    busy[busyKey] = false;
+    if (elements[addressElement]) elements[addressElement].disabled = false;
+    elements[labelElement].textContent = 'Scan again';
+  }
+}
+
+function discoverMicWise() {
+  return scanHttpDevice({
+    key: 'micwise', label: 'Mic-Wise', busyKey: 'micwiseScan',
+    discoverCommand: 'discover_micwise',
+    addressElement: 'micwiseAddress', statusElement: 'micwiseDiscoveryStatus',
+    labelElement: 'micwiseDiscoverButtonLabel', store: discoveredMicWise,
+    describeEmpty: 'No Mic-Wise found. Check the network, then scan again.'
+  });
+}
+
+function discoverSLinkRack() {
+  return scanHttpDevice({
+    key: 'slinkrack', label: 'SLink-Rack', busyKey: 'slinkrackScan',
+    discoverCommand: 'discover_slink_rack',
+    addressElement: 'slinkrackAddress', statusElement: 'slinkrackDiscoveryStatus',
+    labelElement: 'slinkrackDiscoverButtonLabel', store: discoveredSLinkRack,
+    describeEmpty: 'No SLink-Rack found. Check the network, then scan again.'
+  });
+}
+
+async function connectHttpDevice({ key, label, addressElement, statusElement, testCommand, select }) {
+  const endpoint = elements[addressElement].value.trim();
+  if (!endpoint) return showToast(`Enter a ${label} address`, '', 'error');
+  setInlineStatus(elements[statusElement], 'Connecting…');
+  try {
+    await invoke(testCommand, { input: { endpoint } });
+    await select({ endpoint });
+    setInlineStatus(elements[statusElement], 'Connected', 'success');
+    showToast(`${label} connected`);
+  } catch (error) {
+    setInlineStatus(elements[statusElement], String(error), 'error');
+    showToast(`Couldn’t reach ${label}`, String(error), 'error', 8000);
+  }
+}
+
 function renderSettings() {
   renderLocation();
   elements.manualAddress.value = settings.devices.avantis.endpoint;
   elements.showSettings.hidden = !settings.devices.avantis.endpoint;
-  renderAvantisChoices(); renderShows(); renderQLab();
+  renderAvantisChoices(); renderShows(); renderQLab(); renderMicWise(); renderSLinkRack();
   renderHomeSummary();
 }
 
@@ -281,6 +455,8 @@ function guideTo(target) {
     location: elements.chooseFolderButton, avantis: elements.discoverButton,
     shows: availableShows.length ? elements.showSearch : elements.refreshShowsButton,
     qlab: elements.qlabDiscoverButton,
+    micwise: elements.micwiseDiscoverButton,
+    slinkrack: elements.slinkrackDiscoverButton,
     devices: elements.discoverButton
   };
   const element = targets[target]; if (!element) return;
@@ -294,7 +470,7 @@ function showView(name, target) {
     renderSettings();
     if (!hasAutoScanned) {
       hasAutoScanned = true;
-      discoverAvantis(); discoverQLab();
+      discoverAvantis(); discoverQLab(); discoverMicWise(); discoverSLinkRack();
     }
     if (target) requestAnimationFrame(() => guideTo(target));
   }
@@ -476,7 +652,7 @@ async function connectQLabRemote(options = {}) {
     remote.fingerprint = result.fingerprint; elements.qlabPassword.value = ''; setInlineStatus(elements.qlabLoginStatus, 'Connected', 'success');
     await saveSettingsNow(); updateQLabState();
   } catch (error) {
-    remote.fingerprint = ''; setInlineStatus(elements.qlabLoginStatus, String(error), 'error'); setProviderState('qlab', 'offline');
+    setInlineStatus(elements.qlabLoginStatus, String(error), 'error'); setProviderState('qlab', 'offline');
     if (!options.silent) showToast('Couldn’t connect to QLab files', String(error), 'error', 8000);
   } finally { elements.qlabConnectButton.disabled = false; renderQLab(); }
 }
@@ -542,12 +718,32 @@ async function checkQLabConnection() {
   }
 }
 
+async function checkHttpConnection(key, testCommand) {
+  const device = key === 'micwise' ? settings.devices.micwise : settings.devices.slinkRack;
+  const busyKey = key === 'micwise' ? 'micwiseScan' : 'slinkrackScan';
+  const statusElement = key === 'micwise' ? elements.micwiseStatus : elements.slinkrackStatus;
+  if (!device.endpoint || busy[busyKey]) return;
+  try {
+    await invoke(testCommand, { input: { endpoint: device.endpoint } });
+    setProviderState(key, 'connected');
+    setInlineStatus(statusElement, '');
+  } catch {
+    setProviderState(key, 'offline');
+    setInlineStatus(statusElement, 'Not answering. Check the network, then scan again.', 'error');
+  }
+}
+
 async function checkConnections(options = {}) {
   if (busy.connectionCheck) return connectionCheckPromise;
   if (busy.backup) return;
   if (!options.force && document.hidden) return;
   busy.connectionCheck = true;
-  connectionCheckPromise = Promise.all([checkAvantisConnection(), checkQLabConnection()]);
+  connectionCheckPromise = Promise.all([
+    checkAvantisConnection(),
+    checkQLabConnection(),
+    checkHttpConnection('micwise', 'test_micwise'),
+    checkHttpConnection('slinkrack', 'test_slink_rack')
+  ]);
   try {
     await connectionCheckPromise;
   } finally {
@@ -562,6 +758,8 @@ function configurationIssue() {
   if (configuredProviders().length) return null;
   if (settings.devices.avantis.endpoint && !selectedShows().length) return { target: 'shows' };
   if (settings.devices.qlab.instance.host) return { target: 'qlab' };
+  if (settings.devices.micwise.endpoint) return { target: 'micwise' };
+  if (settings.devices.slinkRack.endpoint) return { target: 'slinkrack' };
   return { target: 'devices' };
 }
 
@@ -575,20 +773,28 @@ async function runBackup() {
   const connected = new Set(connectedProviders());
   if (!connected.size) {
     elements.backupButton.disabled = false;
-    showToast('Nothing connected', 'Open QLab or check the Avantis connection, then try again.', 'error', 8000);
+    showToast('Nothing connected', 'Open QLab or check the Avantis, Mic-Wise or SLink-Rack connection, then try again.', 'error', 8000);
     return;
   }
 
   busy.backup = true; elements.progressPanel.hidden = false;
   const failures = []; let fileCount = 0;
   const tasks = [];
-  if (connected.has('Avantis')) tasks.push({
+  if (connected.has('avantis')) tasks.push({
     name: 'Avantis', detail: `${selectedShows().length} Show${selectedShows().length === 1 ? '' : 's'}`,
     run: () => invoke('backup_avantis_shows', { input: { consoleAddress: settings.devices.avantis.endpoint, showNames: selectedShows(), backupFolder: settings.backupFolder } })
   });
-  if (connected.has('QLab')) tasks.push({
+  if (connected.has('qlab')) tasks.push({
     name: 'QLab', detail: `${selectedWorkspaces().length} workspace${selectedWorkspaces().length === 1 ? '' : 's'}`,
     run: () => invoke('backup_qlab_workspaces', { input: { instance: settings.devices.qlab.instance, remote: settings.devices.qlab.remote, workspaces: selectedWorkspaces(), backupFolder: settings.backupFolder } })
+  });
+  if (connected.has('micwise')) tasks.push({
+    name: 'Mic-Wise', detail: settings.devices.micwise.showName || 'Show archive',
+    run: () => invoke('backup_micwise', { input: { endpoint: settings.devices.micwise.endpoint, backupFolder: settings.backupFolder } })
+  });
+  if (connected.has('slinkrack')) tasks.push({
+    name: 'SLink-Rack', detail: settings.devices.slinkRack.instanceName || 'Rack archive',
+    run: () => invoke('backup_slink_rack', { input: { endpoint: settings.devices.slinkRack.endpoint, backupFolder: settings.backupFolder } })
   });
   try {
     await saveSettingsNow();
@@ -610,6 +816,8 @@ async function load() {
   catch (error) { showToast('Couldn’t load Settings', String(error), 'error'); }
   setProviderState('avantis', settings.devices.avantis.endpoint ? 'checking' : 'not-configured');
   setProviderState('qlab', settings.devices.qlab.instance.host ? 'checking' : 'not-configured');
+  setProviderState('micwise', settings.devices.micwise.endpoint ? 'checking' : 'not-configured');
+  setProviderState('slinkrack', settings.devices.slinkRack.endpoint ? 'checking' : 'not-configured');
   renderSettings();
   if (settings.devices.avantis.endpoint) refreshShows({ silent: true });
   if (settings.devices.qlab.instance.host) {
@@ -622,6 +830,8 @@ async function load() {
 elements.settingsButton.addEventListener('click', () => showView('settings'));
 elements.avantisIndicator.addEventListener('click', () => showView('settings', 'avantis'));
 elements.qlabIndicator.addEventListener('click', () => showView('settings', 'qlab'));
+elements.micwiseIndicator.addEventListener('click', () => showView('settings', 'micwise'));
+elements.slinkrackIndicator.addEventListener('click', () => showView('settings', 'slinkrack'));
 elements.settingsBackButton.addEventListener('click', () => showView('home'));
 elements.chooseFolderButton.addEventListener('click', chooseFolder);
 elements.discoverButton.addEventListener('click', discoverAvantis);
@@ -636,9 +846,46 @@ elements.qlabUnlockButton.addEventListener('click', unlockQLab);
 elements.qlabPasscode.addEventListener('keydown', event => { if (event.key === 'Enter') unlockQLab(); });
 elements.qlabConnectButton.addEventListener('click', () => connectQLabRemote({ usePassword: true }));
 elements.qlabPassword.addEventListener('keydown', event => { if (event.key === 'Enter') connectQLabRemote({ usePassword: true }); });
+elements.micwiseDiscoverButton.addEventListener('click', discoverMicWise);
+elements.micwiseConnectButton.addEventListener('click', () => connectHttpDevice({
+  key: 'micwise', label: 'Mic-Wise', addressElement: 'micwiseAddress', statusElement: 'micwiseStatus',
+  testCommand: 'test_micwise', select: selectMicWise
+}));
+elements.micwiseAddress.addEventListener('keydown', event => { if (event.key === 'Enter') elements.micwiseConnectButton.click(); });
+elements.slinkrackDiscoverButton.addEventListener('click', discoverSLinkRack);
+elements.slinkrackConnectButton.addEventListener('click', () => connectHttpDevice({
+  key: 'slinkrack', label: 'SLink-Rack', addressElement: 'slinkrackAddress', statusElement: 'slinkrackStatus',
+  testCommand: 'test_slink_rack', select: selectSLinkRack
+}));
+elements.slinkrackAddress.addEventListener('keydown', event => { if (event.key === 'Enter') elements.slinkrackConnectButton.click(); });
 elements.backupButton.addEventListener('click', runBackup);
 elements.toastCloseButton.addEventListener('click', () => { elements.toast.hidden = true; });
 document.addEventListener('keydown', event => { if (event.key === 'Escape' && !elements.settingsView.hidden) showView('home'); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkConnections({ force: true }); });
 
+function listenToBackend() {
+  const eventApi = window.__TAURI__?.event;
+  if (!eventApi) return;
+  // Real progress from the long-running rack export, and one-click deep links.
+  eventApi.listen('backup://progress', event => {
+    const { provider, detail } = event.payload || {};
+    if (!provider) return;
+    elements.progressTitle.textContent = `Backing up ${provider}`;
+    elements.progressDetail.textContent = detail || 'Working…';
+  });
+  eventApi.listen('stage-backup://open', event => {
+    const url = String(event.payload || '');
+    if (!url.startsWith('stage-backup://')) return;
+    showView('home');
+    const target = new URL(url).searchParams.get('target');
+    const prefersTarget = provider => !target || target === 'all' || target === provider;
+    if (target && target !== 'all') {
+      const matching = { micwise: 'micwise', 'slink-rack': 'slinkrack', 'slinkrack': 'slinkrack', avantis: 'avantis', qlab: 'qlab' }[target];
+      if (matching && states[matching] !== 'connected') showView('settings', matching);
+    }
+    if (prefersTarget('all') || target) void runBackup();
+  });
+}
+
+listenToBackend();
 load();

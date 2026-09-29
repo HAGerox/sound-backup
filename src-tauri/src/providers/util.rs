@@ -119,6 +119,6 @@ mod tests {
 
     #[test]
     fn quotes_shell_strings() {
-        assert_eq!(shell_quote("Finn's Mac"), "'Finn'\\''s Mac'");
+        assert_eq!(shell_quote("Operator's Mac"), "'Operator'\\''s Mac'");
     }
 }

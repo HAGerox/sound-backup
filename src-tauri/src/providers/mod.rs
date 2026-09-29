@@ -1,4 +1,9 @@
 pub mod avantis;
+pub mod http_client;
+pub mod mdns;
+pub mod micwise;
+pub mod net_scan;
 pub mod qlab;
 pub mod remote;
+pub mod slink_rack;
 pub mod util;

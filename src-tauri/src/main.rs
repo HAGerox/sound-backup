@@ -116,9 +116,25 @@ struct QLabSettings {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
+struct MicWiseSettings {
+    endpoint: String,
+    show_name: String,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "camelCase")]
+struct SLinkRackSettings {
+    endpoint: String,
+    instance_name: String,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "camelCase")]
 struct DeviceSettings {
     avantis: AvantisSettings,
     qlab: QLabSettings,
+    micwise: MicWiseSettings,
+    slink_rack: SLinkRackSettings,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -229,6 +245,40 @@ struct QLabWorkspaceResponse {
 #[serde(rename_all = "camelCase")]
 struct QLabAccessResponse {
     base_path: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HttpEndpointInput {
+    endpoint: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HttpBackupInput {
+    endpoint: String,
+    backup_folder: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MicWiseInstanceResponse {
+    endpoint: String,
+    show_name: String,
+    show_filename: String,
+    version: String,
+    local: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SLinkRackInstanceResponse {
+    endpoint: String,
+    instance: String,
+    version: String,
+    racks: Vec<String>,
+    hardware_verified: bool,
+    local: bool,
 }
 
 #[derive(Default)]
@@ -477,6 +527,116 @@ fn settings_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .map_err(|error| format!("Could not locate the settings folder: {error}"))
 }
 
+fn emit_progress(app: &tauri::AppHandle, provider: &str, detail: &str) {
+    use tauri::Emitter;
+    let _ = app.emit(
+        "backup://progress",
+        serde_json::json!({ "provider": provider, "detail": detail }),
+    );
+}
+
+#[tauri::command]
+async fn test_micwise(input: HttpEndpointInput) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || providers::micwise::test(&input.endpoint))
+        .await
+        .map_err(|error| format!("Mic-Wise connection test stopped unexpectedly: {error}"))?
+}
+
+#[tauri::command]
+async fn discover_micwise(known_endpoint: Option<String>) -> Result<Vec<MicWiseInstanceResponse>, String> {
+    let instances = tauri::async_runtime::spawn_blocking(move || {
+        providers::micwise::discover(known_endpoint.as_deref())
+    })
+    .await
+    .map_err(|error| format!("Mic-Wise discovery stopped unexpectedly: {error}"))?;
+    Ok(instances
+        .into_iter()
+        .map(|instance| MicWiseInstanceResponse {
+            endpoint: instance.endpoint,
+            show_name: instance.show_name,
+            show_filename: instance.show_filename,
+            version: instance.version,
+            local: instance.local,
+        })
+        .collect())
+}
+
+#[tauri::command]
+async fn backup_micwise(app: tauri::AppHandle, input: HttpBackupInput) -> Result<BackupResponse, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let reporter = app.clone();
+        providers::micwise::backup(
+            &input.endpoint,
+            &PathBuf::from(input.backup_folder),
+            &mut |detail| emit_progress(&reporter, "Mic-Wise", detail),
+        )
+    })
+    .await
+    .map_err(|error| format!("Mic-Wise backup stopped unexpectedly: {error}"))?
+    .map(|outcome| BackupResponse {
+        total_bytes: outcome.bytes,
+        files: vec![BackupFileResponse {
+            path: outcome.path.to_string_lossy().into_owned(),
+            bytes: outcome.bytes,
+            name: outcome.show_name,
+        }],
+    })
+}
+
+#[tauri::command]
+async fn test_slink_rack(input: HttpEndpointInput) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || providers::slink_rack::test(&input.endpoint))
+        .await
+        .map_err(|error| format!("SLink-Rack connection test stopped unexpectedly: {error}"))?
+}
+
+#[tauri::command]
+async fn discover_slink_rack(
+    known_endpoint: Option<String>,
+) -> Result<Vec<SLinkRackInstanceResponse>, String> {
+    let instances = tauri::async_runtime::spawn_blocking(move || {
+        providers::slink_rack::discover(known_endpoint.as_deref())
+    })
+    .await
+    .map_err(|error| format!("SLink-Rack discovery stopped unexpectedly: {error}"))?;
+    Ok(instances
+        .into_iter()
+        .map(|instance| SLinkRackInstanceResponse {
+            endpoint: instance.endpoint,
+            instance: instance.instance,
+            version: instance.version,
+            racks: instance.racks,
+            hardware_verified: instance.hardware_verified,
+            local: instance.local,
+        })
+        .collect())
+}
+
+#[tauri::command]
+async fn backup_slink_rack(
+    app: tauri::AppHandle,
+    input: HttpBackupInput,
+) -> Result<BackupResponse, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let reporter = app.clone();
+        providers::slink_rack::backup(
+            &input.endpoint,
+            &PathBuf::from(input.backup_folder),
+            &mut |detail| emit_progress(&reporter, "SLink-Rack", detail),
+        )
+    })
+    .await
+    .map_err(|error| format!("SLink-Rack backup stopped unexpectedly: {error}"))?
+    .map(|outcome| BackupResponse {
+        total_bytes: outcome.bytes,
+        files: vec![BackupFileResponse {
+            path: outcome.path.to_string_lossy().into_owned(),
+            bytes: outcome.bytes,
+            name: outcome.instance_name,
+        }],
+    })
+}
+
 fn decode_settings(json: &str) -> Result<Settings, String> {
     let mut settings: Settings =
         serde_json::from_str(json).map_err(|error| format!("Could not read settings: {error}"))?;
@@ -498,6 +658,35 @@ fn main() {
     tauri::Builder::default()
         .manage(AppState::default())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_deep_link::init())
+        .setup(|app| {
+            use tauri::{Emitter, Manager};
+            use tauri_plugin_deep_link::DeepLinkExt;
+
+            // `stage-backup://backup?target=…` is the one-click affordance
+            // offered by Mic-Wise and SLink-Rack. Forward it to the webview so
+            // the existing backup flow runs, and bring the window forward.
+            fn forward(handle: &tauri::AppHandle, url: String) {
+                if let Some(window) = handle.get_webview_window("main") {
+                    let _ = window.set_focus();
+                    let _ = window.unminimize();
+                    let _ = window.show();
+                }
+                let _ = handle.emit("stage-backup://open", url);
+            }
+
+            let listener = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                for url in event.urls() {
+                    forward(&listener, url.to_string());
+                }
+            });
+            let initial = app.deep_link().get_current().ok().flatten();
+            for url in initial.into_iter().flatten() {
+                forward(app.handle(), url.to_string());
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             load_settings,
             save_settings,
@@ -511,10 +700,16 @@ fn main() {
             discover_qlab,
             load_qlab_workspaces,
             authorise_qlab_workspace,
-            backup_qlab_workspaces
+            backup_qlab_workspaces,
+            test_micwise,
+            discover_micwise,
+            backup_micwise,
+            test_slink_rack,
+            discover_slink_rack,
+            backup_slink_rack
         ])
         .run(tauri::generate_context!())
-        .expect("failed to run Stage Backup");
+        .expect("failed to run Sound Backup");
 }
 
 #[cfg(test)]
@@ -541,5 +736,26 @@ mod tests {
         let json = serde_json::to_string(&Settings::default()).unwrap();
         assert!(!json.to_ascii_lowercase().contains("password"));
         assert!(!json.to_ascii_lowercase().contains("passcode"));
+    }
+
+    #[test]
+    fn new_device_settings_default_to_discoverable_endpoints() {
+        let settings = decode_settings(r#"{"backupFolder":"/tmp"}"#).unwrap();
+        assert_eq!(settings.devices.micwise.endpoint, "");
+        assert_eq!(settings.devices.slink_rack.endpoint, "");
+        assert_eq!(settings.devices.slink_rack.instance_name, "");
+    }
+
+    #[test]
+    fn reads_http_device_settings() {
+        let settings = decode_settings(
+            r#"{"backupFolder":"/tmp","devices":{"micwise":{"endpoint":"http://10.0.0.4:8000","showName":"Sunday"},
+                 "slinkRack":{"endpoint":"http://192.168.130.18:8080","instanceName":"front-of-house"}}}"#,
+        )
+        .unwrap();
+        assert_eq!(settings.devices.micwise.endpoint, "http://10.0.0.4:8000");
+        assert_eq!(settings.devices.micwise.show_name, "Sunday");
+        assert_eq!(settings.devices.slink_rack.endpoint, "http://192.168.130.18:8080");
+        assert_eq!(settings.devices.slink_rack.instance_name, "front-of-house");
     }
 }

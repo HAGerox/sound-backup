@@ -401,7 +401,7 @@ impl OscClient {
             return serde_json::from_str(&json)
                 .map_err(|error| format!("QLab returned an unreadable response: {error}"));
         }
-        Err("QLab returned a response Stage Backup did not recognise.".to_string())
+        Err("QLab returned a response Sound Backup did not recognise.".to_string())
     }
 
     fn stream(&mut self, port: u16) -> Result<&mut TcpStream, String> {
@@ -588,7 +588,7 @@ mod tests {
     #[test]
     fn refuses_root_as_a_project_folder() {
         assert!(validate_base_path("/").is_err());
-        assert!(validate_base_path("/Users/finn/Show").is_ok());
+        assert!(validate_base_path("/Users/operator/Show").is_ok());
     }
 
     #[test]
