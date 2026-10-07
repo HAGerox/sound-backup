@@ -72,6 +72,8 @@ const elements = {
   slinkrackDiscoveryStatus: $('#slinkrackDiscoveryStatus'), slinkrackInstanceChoices: $('#slinkrackInstanceChoices'),
   slinkrackAddress: $('#slinkrackAddress'), slinkrackConnectButton: $('#slinkrackConnectButton'),
   slinkrackStatus: $('#slinkrackStatus'),
+  avantisRemoveButton: $('#avantisRemoveButton'), qlabRemoveButton: $('#qlabRemoveButton'),
+  micwiseRemoveButton: $('#micwiseRemoveButton'), slinkrackRemoveButton: $('#slinkrackRemoveButton'),
   toast: $('#toast'), toastIcon: $('#toastIcon'), toastTitle: $('#toastTitle'),
   toastDetail: $('#toastDetail'), toastCloseButton: $('#toastCloseButton')
 };
@@ -428,7 +430,48 @@ function renderSettings() {
   elements.manualAddress.value = settings.devices.avantis.endpoint;
   elements.showSettings.hidden = !settings.devices.avantis.endpoint;
   renderAvantisChoices(); renderShows(); renderQLab(); renderMicWise(); renderSLinkRack();
-  renderHomeSummary();
+  renderRemoveButtons(); renderHomeSummary();
+}
+
+function savedConnection(provider) {
+  const devices = settings.devices;
+  return {
+    avantis: devices.avantis.endpoint,
+    qlab: devices.qlab.instance.host,
+    micwise: devices.micwise.endpoint,
+    slinkrack: devices.slinkRack.endpoint
+  }[provider];
+}
+
+function renderRemoveButtons() {
+  for (const provider of Object.keys(PROVIDERS)) elements[`${provider}RemoveButton`].hidden = !savedConnection(provider);
+}
+
+async function removeConnection(provider) {
+  if (!savedConnection(provider)) return;
+  const fresh = emptySettings().devices;
+  if (provider === 'avantis') {
+    settings.devices.avantis = fresh.avantis; availableShows = []; discoveredAvantis = [];
+    elements.showSearch.value = ''; setInlineStatus(elements.discoveryStatus, ''); setInlineStatus(elements.showStatus, '');
+  } else if (provider === 'qlab') {
+    const remote = settings.devices.qlab.remote;
+    if (!remote.local && remote.username) {
+      try { await invoke('forget_remote_access', { remote }); }
+      catch (error) { showToast('Couldn’t remove the saved login', String(error), 'error', 8000); }
+    }
+    settings.devices.qlab = fresh.qlab; availableWorkspaces = []; discoveredQLab = []; qlabAccessReady.clear();
+    elements.qlabPassword.value = ''; elements.qlabPasscode.value = ''; elements.qlabPasscodePanel.hidden = true;
+    for (const status of [elements.qlabDiscoveryStatus, elements.qlabWorkspaceStatus, elements.qlabLoginStatus]) setInlineStatus(status, '');
+  } else if (provider === 'micwise') {
+    settings.devices.micwise = fresh.micwise; discoveredMicWise.length = 0;
+    setInlineStatus(elements.micwiseDiscoveryStatus, ''); setInlineStatus(elements.micwiseStatus, '');
+  } else {
+    settings.devices.slinkRack = fresh.slinkRack; discoveredSLinkRack.length = 0;
+    setInlineStatus(elements.slinkrackDiscoveryStatus, ''); setInlineStatus(elements.slinkrackStatus, '');
+  }
+  setProviderState(provider, 'not-configured'); renderSettings();
+  try { await saveSettingsNow(); showToast(`${PROVIDERS[provider]} removed`, 'Scan again to add it back.'); }
+  catch (error) { showToast('Couldn’t save Settings', String(error), 'error'); }
 }
 
 function sameQLab(a, b) {
@@ -493,14 +536,14 @@ async function discoverAvantis() {
     const devices = await invoke('discover_avantis', { knownAddress: settings.devices.avantis.endpoint || null });
     discoveredAvantis = Array.isArray(devices) ? devices : []; renderAvantisChoices();
     if (!discoveredAvantis.length) {
-      setInlineStatus(elements.discoveryStatus, 'No Avantis found. Check the network, then scan again.');
+      setInlineStatus(elements.discoveryStatus, 'No Avantis answered. Check this Mac is on the console’s network, or connect by IP.');
       if (!settings.devices.avantis.endpoint) setProviderState('avantis', 'not-configured');
     } else {
       setInlineStatus(elements.discoveryStatus, '');
       if (!settings.devices.avantis.endpoint && discoveredAvantis.length === 1) await selectAvantis(discoveredAvantis[0].endpoint);
     }
-  } catch {
-    setInlineStatus(elements.discoveryStatus, 'Scan failed. Try again or connect by IP.', 'error');
+  } catch (error) {
+    setInlineStatus(elements.discoveryStatus, `Scan failed: ${String(error)}`, 'error');
     if (!settings.devices.avantis.endpoint) setProviderState('avantis', 'not-configured');
   } finally {
     busy.avantisScan = false; elements.discoverButton.disabled = false; elements.discoverButtonLabel.textContent = 'Scan again';
@@ -530,9 +573,10 @@ async function refreshShows(options = {}) {
     const names = new Map(availableShows.map(show => [show.name.toLocaleLowerCase(), show.name]));
     settings.devices.avantis.selectedShows = selectedShows().map(name => names.get(name.toLocaleLowerCase())).filter(Boolean);
     setProviderState('avantis', 'connected'); setInlineStatus(elements.showStatus, ''); await saveSettingsNow();
-  } catch {
-    availableShows = []; setProviderState('avantis', 'offline'); setInlineStatus(elements.showStatus, '');
-    if (!options.silent) showToast('Avantis unavailable', 'Check the console and network, then try again.', 'error');
+  } catch (error) {
+    availableShows = []; setProviderState('avantis', 'offline');
+    setInlineStatus(elements.showStatus, String(error), 'error');
+    if (!options.silent) showToast('Avantis unavailable', String(error), 'error', 8000);
   } finally {
     busy.shows = false; elements.refreshShowsButton.disabled = false; renderSettings();
   }
@@ -676,9 +720,9 @@ async function checkAvantisConnection() {
     await invoke('test_avantis', { consoleAddress: endpoint });
     setProviderState('avantis', 'connected');
     setInlineStatus(elements.showStatus, '');
-  } catch {
+  } catch (error) {
     setProviderState('avantis', 'offline');
-    setInlineStatus(elements.showStatus, 'Check the console and network, then try again.', 'error');
+    setInlineStatus(elements.showStatus, String(error), 'error');
   }
 }
 
@@ -858,6 +902,9 @@ elements.slinkrackConnectButton.addEventListener('click', () => connectHttpDevic
   testCommand: 'test_slink_rack', select: selectSLinkRack
 }));
 elements.slinkrackAddress.addEventListener('keydown', event => { if (event.key === 'Enter') elements.slinkrackConnectButton.click(); });
+for (const provider of Object.keys(PROVIDERS)) {
+  elements[`${provider}RemoveButton`].addEventListener('click', () => removeConnection(provider));
+}
 elements.backupButton.addEventListener('click', runBackup);
 elements.toastCloseButton.addEventListener('click', () => { elements.toast.hidden = true; });
 document.addEventListener('keydown', event => { if (event.key === 'Escape' && !elements.settingsView.hidden) showView('home'); });

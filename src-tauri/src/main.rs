@@ -370,7 +370,7 @@ async fn discover_avantis(
             .into_iter()
             .map(|device| AvantisDeviceResponse {
                 endpoint: device.endpoint,
-                name: "Avantis".to_string(),
+                name: device.name,
             })
             .collect()
     })
@@ -432,6 +432,15 @@ async fn test_remote_access(input: RemoteAccessInput) -> Result<RemoteAccessResp
     })
     .await
     .map_err(|error| format!("Remote Login test stopped unexpectedly: {error}"))?
+}
+
+#[tauri::command]
+async fn forget_remote_access(remote: RemoteSettings) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        providers::remote::forget_password(&providers::remote::Connection::from(&remote))
+    })
+    .await
+    .map_err(|error| format!("Removing the saved login stopped unexpectedly: {error}"))?
 }
 
 #[tauri::command]
@@ -675,6 +684,10 @@ fn main() {
                 let _ = handle.emit("stage-backup://open", url);
             }
 
+            if let Ok(log_dir) = app.path().app_log_dir() {
+                providers::avantis::install_trace_log(log_dir);
+            }
+
             let listener = app.handle().clone();
             app.deep_link().on_open_url(move |event| {
                 for url in event.urls() {
@@ -697,6 +710,7 @@ fn main() {
             load_avantis_shows,
             backup_avantis_shows,
             test_remote_access,
+            forget_remote_access,
             discover_qlab,
             load_qlab_workspaces,
             authorise_qlab_workspace,

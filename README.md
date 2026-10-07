@@ -1,6 +1,6 @@
 # Sound Backup
 
-[Download for macOS](https://apps.finnstanley.com/sound-backup/) — Apple silicon, macOS 11+. Version 0.1.0 is an unsigned preview; see the release notes for first-launch instructions and hardware validation limits.
+[Download for macOS](https://apps.finnstanley.com/sound-backup/) — Apple silicon, macOS 11+. Version 0.2.0 is an unsigned preview; see the release notes for first-launch instructions and hardware validation limits.
 
 A small macOS-first Tauri app for one-click backups of live-production systems: Allen & Heath Avantis, QLab, Mic-Wise and SLink-Rack.
 
@@ -34,7 +34,7 @@ The `AllenHeath-Avantis` folder can then be placed at the root of a USB drive fo
 - Avantis: it backs up the **stored Show file**, not uncommitted live desk state. Store/Overwrite on the Avantis first if current changes need to be in the backup.
 - Show archive bytes are not decompressed, recompressed, converted, or otherwise re-encoded.
 - Output filenames begin with a UTC timestamp and are restricted to simple ASCII characters.
-- Network discovery scans the active local subnet (wide networks are limited to the computer's local `/24`) and only accepts devices that identify themselves correctly. A manual address remains available as a fallback.
+- Avantis consoles are found with the same UDP unit-finder broadcast Avantis Director uses. Mic-Wise and SLink-Rack use Bonjour, or a probe of the local subnet (wide networks are limited to the computer's local `/24`), and only accept devices that identify themselves correctly. A manual address remains available as a fallback, and Settings can remove any saved connection.
 - The home screen is deliberately limited to connection status, one backup button, progress, and completion feedback. Backup location and per-system selection live in Settings.
 - QLab is discovered through Bonjour. Sound Backup automatically includes its open projects, tells each one to save, archives the directory containing the workspace, and transfers the resulting zip. Media referenced from outside that directory is not collected like QLab's native Bundle Workspace feature.
 - Local QLab instances do not require Remote Login. For another Mac, turn on **System Settings → General → Sharing → Remote Login**. No Sound Backup agent is installed on that Mac.
@@ -72,7 +72,7 @@ npm run package:macos
 
 ## Tests
 
-The Avantis network/protocol implementation lives in the dependency-free `avantis-protocol` workspace crate. Its integration tests run simulated AH-Net consoles and cover catalogue filtering, native-location preference, single-Show backup, multi-Show backup in one session, and USB-layout output:
+The Avantis network/protocol implementation lives in the dependency-free `avantis-protocol` workspace crate. Its unit and integration tests cover UDP unit-finder discovery, User Show catalogue filtering, single-Show backup, multi-Show backup in one session, and USB-layout output:
 
 ```sh
 cargo test -p avantis-protocol
@@ -108,7 +108,7 @@ The Avantis implementation was derived for interoperability from the user-suppli
 
 The local QLab integration test has queried a real open QLab 5 workspace over OSC/TCP. Remote Login authentication, transfer, and host-key pinning are covered structurally but still need validation against a second Mac on the target production network.
 
-Set `STAGE_BACKUP_TRACE=1` before launching from a terminal to print protocol-level diagnostics if a real console behaves differently. Automatic discovery also depends on the Mac and Avantis being reachable on the same local IPv4 network; routed or firewalled networks may require the manual address fallback.
+Avantis protocol steps (connection, message headers and Show names, but never Show data) are logged to `~/Library/Logs/uk.stagebackup.desktop/avantis.log`. Set `STAGE_BACKUP_TRACE=1` before launching from a terminal to also print them. Automatic discovery also depends on the Mac and Avantis being reachable on the same local IPv4 network; routed or firewalled networks may require the manual address fallback.
 
 ## Repository layout
 

@@ -35,7 +35,7 @@ firewalled networks.
 
 | System | mDNS service type | Probe port | Identify with |
 | --- | --- | --- | --- |
-| Avantis | — (Director advertises nothing) | `51321` | AH-Net handshake + Show File Manager |
+| Avantis | — (UDP unit finder, `TLD`/`Squirrel Find` → 51320) | — | Unit-name reply; manual address via AH-Net handshake |
 | QLab | `_qlab._tcp.local.` | `53000` | OSC `/workspaces` |
 | Mic-Wise | `_micwise._tcp.local.` | `8000` | `GET /api/health` |
 | SLink-Rack | `_slink-rack._tcp.local.` | `8080` | `GET /api/identity` |

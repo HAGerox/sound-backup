@@ -171,6 +171,21 @@ fn save_password(connection: &Connection, password: &str) -> Result<(), String> 
         .map_err(|error| format!("Could not save the password in Keychain: {error}"))
 }
 
+/// Delete the Keychain password saved for a remote Mac. A missing entry is not an error.
+pub fn forget_password(connection: &Connection) -> Result<(), String> {
+    if connection.username.trim().is_empty() || connection.host.trim().is_empty() {
+        return Ok(());
+    }
+    let entry = Entry::new(REMOTE_LOGIN_SERVICE, &password_account(connection))
+        .map_err(|error| format!("Could not open Keychain: {error}"))?;
+    match entry.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(error) => Err(format!(
+            "Could not remove the saved password from Keychain: {error}"
+        )),
+    }
+}
+
 fn load_password(connection: &Connection) -> Result<Option<String>, String> {
     let entry = Entry::new(REMOTE_LOGIN_SERVICE, &password_account(connection))
         .map_err(|error| format!("Could not open Keychain: {error}"))?;

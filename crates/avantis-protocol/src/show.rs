@@ -75,9 +75,9 @@ mod tests {
 
     #[test]
     fn show_key_is_exactly_reused_except_legacy_flag() {
-        let key = ShowKey::fixture("Sunday", 4);
+        let key = ShowKey::fixture("Sunday", 1);
         assert_eq!(key.name(), "Sunday");
-        assert_eq!(key.location(), 4);
+        assert_eq!(key.location(), 1);
         let payload = key.download_payload();
         assert_eq!(payload.len(), 42);
         assert_eq!(&payload[18..20], &0x1234u16.to_be_bytes());

@@ -30,7 +30,7 @@ struct Msg {
 fn backs_up_selected_user_show_end_to_end() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
-    let server = thread::spawn(move || mock_console(listener, 4));
+    let server = thread::spawn(move || mock_console(listener, 1));
 
     let base = temp_dir();
     fs::create_dir_all(&base).unwrap();
@@ -54,29 +54,7 @@ fn backs_up_selected_user_show_end_to_end() {
 }
 
 #[test]
-fn backs_up_compatibility_location_after_catalogue_settles() {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    let server = thread::spawn(move || mock_console(listener, 2));
-
-    let base = temp_dir();
-    fs::create_dir_all(&base).unwrap();
-    let outcome = backup_show(&BackupRequest {
-        endpoint: format!("127.0.0.1:{port}"),
-        show_name: "Sunday".into(),
-        destination: base.clone(),
-    })
-    .unwrap();
-
-    assert_eq!(outcome.show_name, "Sunday");
-    assert_eq!(fs::read(&outcome.path).unwrap(), fixture_archive());
-
-    server.join().unwrap();
-    let _ = fs::remove_dir_all(base);
-}
-
-#[test]
-fn lists_only_stored_user_shows_and_prefers_the_native_location() {
+fn lists_only_user_shows_like_director() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let server = thread::spawn(move || mock_console_catalogue(listener));
@@ -167,10 +145,11 @@ fn mock_console_catalogue(listener: TcpListener) {
         &mut stream,
         [
             show_added("Factory", 0),
-            show_added("On USB", 1),
-            show_added("Sunday", 2),
-            show_added("Festival", 4),
-            show_added("Sunday", 4),
+            show_added("Sunday", 1),
+            show_added("On USB", 2),
+            show_added("Working", 4),
+            show_added("Festival", 1),
+            show_added("sunday", 1),
         ],
     );
     thread::sleep(Duration::from_millis(400));
@@ -182,8 +161,8 @@ fn mock_console_batch(listener: TcpListener) {
         &mut stream,
         [
             show_added("Factory", 0),
-            show_added("Sunday", 4),
-            show_added("Festival", 4),
+            show_added("Sunday", 1),
+            show_added("Festival", 1),
         ],
     );
 

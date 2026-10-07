@@ -221,9 +221,22 @@ mod tests {
     fn serve_sequence(bodies: Vec<String>) -> (String, std::thread::JoinHandle<()>) {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
+        // Bounded so a client that stops early fails its assertion rather than hanging the join.
+        listener.set_nonblocking(true).unwrap();
         let handle = std::thread::spawn(move || {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
             for payload in bodies {
-                if let Ok((mut stream, _)) = listener.accept() {
+                let accepted = loop {
+                    match listener.accept() {
+                        Ok(accepted) => break Some(accepted),
+                        Err(_) if std::time::Instant::now() < deadline => {
+                            std::thread::sleep(std::time::Duration::from_millis(5))
+                        }
+                        Err(_) => break None,
+                    }
+                };
+                if let Some((mut stream, _)) = accepted {
+                    stream.set_nonblocking(false).unwrap();
                     let mut buffer = [0u8; 2048];
                     let _ = stream.read(&mut buffer);
                     let response = format!(

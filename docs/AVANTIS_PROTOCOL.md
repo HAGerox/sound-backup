@@ -11,11 +11,20 @@ These notes document the small subset of Director V2.01 behaviour used by Sound 
 
 ## Local discovery
 
-Director V2.01 connects to an explicitly supplied host and does not expose Bonjour/mDNS discovery. Sound Backup therefore scans the Mac's active local IPv4 subnets for TCP 51321, then performs the normal AH-Net handshake and `Show File Manager` lookup before presenting a device. Wide networks are intentionally limited to the Mac's local `/24`; a manually entered address remains available for routed networks.
+Director V2.01 finds consoles with Allen & Heath's UDP unit finder (`cUnitFinder`), not Bonjour:
+
+- From an ephemeral socket bound to each active IPv4 interface, it broadcasts to the subnet on UDP 51320.
+- Console finder requests are `TLD Find\0V2\0` and `Squirrel Find\0V2\0`. Director appends `\0V2\0` to every non-legacy finder string.
+- A unit replies to the sending socket with its unit name as a NUL-terminated ASCII string. The datagram source is the console address.
+- Director repeats the broadcast on a timer. It also binds UDP 51319 for its multi-unit finder.
+
+Sound Backup sends the same two requests on every active IPv4 interface for about 1.6 seconds and lists each unit that replies, by name. A saved address also receives a unicast finder request. If it does not answer, it is checked with an AH-Net connection, so routed networks still work through the manual address.
+
+An earlier build found consoles by sweeping TCP 51321. That was unreliable: the 90 ms connect timeout was too short on Wi-Fi, and unrelated devices accept that port (an Extron CrossPoint, for example, accepts almost any TCP port).
 
 ## Object discovery
 
-The remote registry is queried for `Show File Manager`. The returned object handle is then used directly. This avoids emulating the full Director Show Manager UI or reciprocal Show Manager discovery.
+Director addresses remote objects as `<host>/<object>`. Its registry router (`cRegistryRouter::FindObject`) splits off the host, selects that connection, and sends function `4` to target `0` (the remote registry) with only the object name. The reply is function `2` with the handle: 4 bytes on AH-Net v2 connections and 2 bytes on v1. Function `3` means not found. `cShowManagerClient` looks up `Show File Manager`, and Sound Backup sends the same request. Receivers replace the connection field with their own connection index, so the sender's value is not significant.
 
 ## Show catalogue
 
@@ -29,7 +38,18 @@ The Show File Manager is sent function `0x0100` (sync). Director handles catalog
 0x29   1 byte   legacy flag
 ```
 
-Director's User Show storage maps to location `4`. Sound Backup prefers that location, ignores Factory/USB locations (`0`/`1`), and retains a non-factory compatibility fallback.
+Director's `GetShowDirectory(eShowLocation)` maps locations to storage:
+
+| Location | Storage |
+| --- | --- |
+| `0` | Factory Shows |
+| `1` | User Shows |
+| `2` | USB |
+| `4` | Internal working directory |
+
+Director's console Show list (`cShowManagerFormBackend::RefreshSBCShowsList`) shows locations `1` and `0`, and its USB list shows `2`. Sound Backup lists only location `1`. An earlier build treated `4` as User Shows and discarded `1`, which hid every stored Show.
+
+The server side, `cShowFileManager`, is also in Director. Its dispatch table confirms `0x100` = `Sync(connection, source)`, `0x118` = `UploadShowToConnId`, and `0x119` = `StoreShowAndUploadToConnId`. `Sync` answers with one `0x1001` message per Show, written by `sShowKey::PutShowKeyInMessage` in the layout above.
 
 ## Direct stored-Show download
 

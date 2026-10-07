@@ -13,6 +13,7 @@ use std::{
     io::{Read, Write},
     net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket},
     path::{Path, PathBuf},
+    sync::OnceLock,
     time::{Duration, Instant, SystemTime},
 };
 
@@ -29,6 +30,16 @@ const FILE_HEADER: u16 = 0x113;
 const FILE_ACK: u16 = 2;
 const FILE_ERROR: u16 = 3;
 const MAX_SHOW_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+const USER_SHOW_LOCATION: u8 = 1;
+
+type TraceSink = Box<dyn Fn(&str) + Send + Sync>;
+static TRACE_SINK: OnceLock<TraceSink> = OnceLock::new();
+
+/// Route protocol trace lines (connection steps and message headers, never Show data) to a
+/// diagnostic log. Only the first sink installed is used.
+pub fn set_trace_sink(sink: impl Fn(&str) + Send + Sync + 'static) {
+    let _ = TRACE_SINK.set(Box::new(sink));
+}
 
 #[derive(Clone, Debug)]
 pub struct BackupRequest {
@@ -75,22 +86,26 @@ struct ReceivedNet {
 }
 
 pub fn test_connection(endpoint: &str) -> Result<()> {
-    let mut session = Session::connect(endpoint)?;
-    session.discover_show_file_manager()?;
-    Ok(())
+    traced("test connection", endpoint, || {
+        let mut session = Session::connect(endpoint)?;
+        session.discover_show_file_manager()?;
+        Ok(())
+    })
 }
 
 pub fn list_stored_shows(endpoint: &str) -> Result<Vec<StoredShow>> {
-    validate_endpoint(endpoint)?;
-    let mut session = Session::connect(endpoint)?;
-    let show_manager = session.discover_show_file_manager()?;
-    Ok(session
-        .list_stored_show_keys(show_manager)?
-        .into_iter()
-        .map(|key| StoredShow {
-            name: key.name().to_string(),
-        })
-        .collect())
+    traced("list Shows", endpoint, || {
+        validate_endpoint(endpoint)?;
+        let mut session = Session::connect(endpoint)?;
+        let show_manager = session.discover_show_file_manager()?;
+        Ok(session
+            .list_stored_show_keys(show_manager)?
+            .into_iter()
+            .map(|key| StoredShow {
+                name: key.name().to_string(),
+            })
+            .collect())
+    })
 }
 
 pub fn backup_show(request: &BackupRequest) -> Result<BackupOutcome> {
@@ -105,6 +120,10 @@ pub fn backup_show(request: &BackupRequest) -> Result<BackupOutcome> {
 }
 
 pub fn backup_shows(request: &BackupBatchRequest) -> Result<BackupBatchOutcome> {
+    traced("back up Shows", &request.endpoint, || backup_shows_untraced(request))
+}
+
+fn backup_shows_untraced(request: &BackupBatchRequest) -> Result<BackupBatchOutcome> {
     validate_batch_request(request)?;
     let mut session = Session::connect(&request.endpoint)?;
     let show_manager = session.discover_show_file_manager()?;
@@ -341,18 +360,11 @@ impl Session {
                 key.name()
             ));
 
-            // Factory and USB locations are not console-stored User Shows. Director V2.01 maps
-            // User Show storage to location 4; another non-removable location is retained as a
-            // compatibility fallback, but an explicit location-4 copy always wins.
-            if !matches!(key.location(), 0 | 1) {
-                let normalised = key.name().to_ascii_lowercase();
-                let replace = shows
-                    .get(&normalised)
-                    .is_none_or(|current| current.location() != 4 || key.location() == 4);
-                if replace {
-                    shows.insert(normalised, key);
-                }
-                catalogue_settle_deadline = Some(Instant::now() + Duration::from_millis(300));
+            // Director's console Show list asks for User Shows (location 1); Factory (0), USB (2)
+            // and internal working copies (4) are not stored Shows the console can upload.
+            catalogue_settle_deadline = Some(Instant::now() + Duration::from_millis(300));
+            if key.location() == USER_SHOW_LOCATION {
+                shows.entry(key.name().to_ascii_lowercase()).or_insert(key);
             }
         }
 
@@ -832,7 +844,22 @@ fn monotonic_tag() -> u128 {
         .as_millis()
 }
 
+/// Record the start and outcome of a public operation, so a failure is visible in the log
+/// alongside the protocol step that preceded it.
+fn traced<T>(operation: &str, endpoint: &str, run: impl FnOnce() -> Result<T>) -> Result<T> {
+    trace(format!("{operation}: {endpoint}"));
+    let result = run();
+    match &result {
+        Ok(_) => trace(format!("{operation}: ok")),
+        Err(error) => trace(format!("{operation} failed: {error}")),
+    }
+    result
+}
+
 fn trace(message: String) {
+    if let Some(sink) = TRACE_SINK.get() {
+        sink(&message);
+    }
     if std::env::var_os("STAGE_BACKUP_TRACE").is_some() {
         eprintln!("[avantis] {message}");
     }

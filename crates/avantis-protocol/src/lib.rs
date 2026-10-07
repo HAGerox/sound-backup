@@ -1,12 +1,14 @@
 mod client;
+mod discovery;
 mod filename;
 mod show;
 mod wire;
 
 pub use client::{
-    backup_show, backup_shows, list_stored_shows, test_connection, BackupBatchOutcome,
-    BackupBatchRequest, BackupOutcome, BackupRequest, StoredShow,
+    backup_show, backup_shows, list_stored_shows, set_trace_sink, test_connection,
+    BackupBatchOutcome, BackupBatchRequest, BackupOutcome, BackupRequest, StoredShow,
 };
+pub use discovery::{find_consoles, DiscoveredConsole, FinderRoute, DISCOVERY_PORT};
 pub use filename::{
     dated_archive_name, sanitise_archive_stem, usb_show_directory, AVANTIS_USB_ROOT,
     AVANTIS_USB_SHOWS,

@@ -1,11 +1,23 @@
-# Public release audit — Sound Backup 0.1.0
+# Public release audit — Sound Backup 0.2.0
 
-Reviewed 30 September 2026 before publishing the source and macOS DMG.
+First reviewed 30 September 2026 for 0.1.0 and re-reviewed 7 October 2026 for 0.2.0, before publishing the source and macOS DMG.
+
+## What changed in 0.2.0
+
+0.2.0 is a bug-fix release on top of 0.1.0. The review below focused on the new code:
+
+- **Avantis discovery** now uses Allen & Heath's UDP unit finder — the same broadcast Avantis Director sends — on UDP 51320 from each active IPv4 interface, instead of sweeping TCP 51321. Only units that answer the finder with a name are listed; a saved address is still checked with an AH-Net connection. The old TCP sweep was unreliable: its 90 ms connect timeout failed on Wi-Fi, and unrelated devices accept that port.
+- **Avantis Show list** now reads Director's User Show location (`1`) rather than the internal working location (`4`), which had hidden every stored Show. Only names and locations reported by the console are read; Show data is not parsed.
+- **Settings can remove any saved connection.** Removing a remote QLab login deletes its macOS Keychain password through a new `forget_remote_access` command; a missing Keychain entry is not an error.
+- **Avantis protocol trace** (connection steps, message headers and Show names — never Show data) is written to `~/Library/Logs/uk.stagebackup.desktop/avantis.log`, capped at 512 KiB with a single rotated `avantis.previous.log`. Nothing is sent off the machine.
+- **Error messages** now surface the underlying connection or protocol failure instead of a generic "try again".
+
+Re-ran the checks for 0.2.0: Gitleaks scanned all Git history and the publishable working files with no leaks; TruffleHog scanned Git history with verification disabled and reported zero verified or unverified secrets; `npm audit` reported zero vulnerabilities, and `cargo audit` reported the same allowed upstream maintenance warnings as 0.1.0. The full Rust workspace and frontend regression tests pass, with the one QLab test skipped because it needs an open QLab workspace.
 
 ## Scope and checks
 
 - Gitleaks scanned all local Git history, including checkpoint refs, with no secrets found. TruffleHog independently scanned Git history with verification disabled and reported zero verified or unverified secrets.
-- Gitleaks separately scanned the publishable working files, including new providers. No secrets found. A broad scan of ignored build output flagged six copies of a `muda` Rust metadata documentation example; these are not credentials and `.rmeta` files are not distributed.
+- Gitleaks separately scanned the publishable working files, including new providers and the Avantis discovery module. No secrets found. A broad scan of ignored build output flagged nine copies of a `muda` Rust metadata documentation example (the count grows with build artifacts); these are not credentials and `.rmeta` files are not distributed.
 - Manually reviewed credentials, settings serialization, SSH commands and host identity verification, OSC/HTTP/AH-Net traffic, discovery, deep links, frontend rendering, build inputs, documentation, and the tracked file inventory. Inspected historical URL, email, and absolute-path references.
 - npm audit reported zero known vulnerabilities. Cargo audit reported zero vulnerabilities. The lockfile retains upstream Unicode maintenance warnings through Tauri. GLib unsoundness and proc-macro-error maintenance advisories concern platform dependencies absent from the macOS dependency tree. Updated the yanked libssh2-sys 0.3.2 to 0.3.3.
 - Ran Rust workspace tests and frontend regression tests. One Rust test is intentionally skipped because it requires an open QLab workspace.
@@ -17,7 +29,7 @@ Reviewed 30 September 2026 before publishing the source and macOS DMG.
 - Removed the developer's name from current test fixtures. Older commits retain harmless examples (`/Users/finn/Show` and `finn@qlab-mac.local`); these are test data, not credentials or production account configuration.
 - Rust panic locations and vendored OpenSSL paths included the builder's home directory. The packaging command remaps Rust paths and builds native dependencies outside the home directory; the distributed executable was checked for `/Users/` paths.
 - The app stores Remote Login passwords and QLab OSC passcodes in macOS Keychain. Saved settings contain endpoints, usernames, workspace names, host fingerprints and the chosen backup folder, but no passwords. User settings and Keychain contents are not packaging inputs.
-- No analytics, telemetry, cloud upload endpoints, private show archives, audio recordings, or Allen & Heath binaries are included. Network traffic goes to discovered or configured systems. Optional Avantis trace logging can print endpoint and Show names locally.
+- No analytics, telemetry, cloud upload endpoints, private show archives, audio recordings, or Allen & Heath binaries are included. Network traffic goes to discovered or configured systems. Avantis trace logging writes endpoint and Show names to a local log file under `~/Library/Logs`. Nothing is sent off the machine.
 - Corrected the read-only description: QLab saves the workspace before archiving its directory; SLink-Rack creates an export job. Avantis only downloads stored Shows.
 - Added explicit app icons and bundled project/third-party license notices. Screenshot assets show the actual packaged desktop app and contain no account names, IP addresses or personal file paths.
 
