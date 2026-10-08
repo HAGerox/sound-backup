@@ -296,6 +296,16 @@
       </section>
     </main>
 
+    <dialog id="newerShowDialog" class="newer-show-dialog" aria-labelledby="newerShowTitle" aria-describedby="newerShowDetail">
+      <h2 id="newerShowTitle">A newer Show is on the Avantis</h2>
+      <p id="newerShowDetail">Back up the newer version instead?</p>
+      <ul id="newerShowList" class="newer-show-list"></ul>
+      <div class="dialog-actions">
+        <button id="newerShowKeepButton" class="secondary-button" type="button">Keep current Shows</button>
+        <button id="newerShowUseButton" class="primary-button" type="button" autofocus>Use newer Shows</button>
+      </div>
+    </dialog>
+
     <div id="toast" class="toast" hidden role="status" aria-live="polite">
       <span class="toast-icon" aria-hidden="true">
         <i id="toastIcon" class="fa-solid fa-check"></i>

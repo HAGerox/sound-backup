@@ -1,6 +1,15 @@
-# Public release audit — Sound Backup 0.2.0
+# Public release audit — Sound Backup 0.3.0
 
-First reviewed 30 September 2026 for 0.1.0 and re-reviewed 7 October 2026 for 0.2.0, before publishing the source and macOS DMG.
+First reviewed 30 September 2026 for 0.1.0, re-reviewed 7 October 2026 for 0.2.0 and 8 October 2026 for 0.3.0, before publishing the source and macOS DMG.
+
+## What changed in 0.3.0
+
+- **Avantis Show download now works on a real console.** The file-transfer function numbers taken from Director were swapped: the console sends the header in `0x0112` and the remaining packets in `0x0113`. Verified against a physical Avantis by listing its User Shows and downloading single and multiple Shows. Each archive passed a gzip and tar check. The mock console now matches the captured traffic.
+- **Newer Show prompt.** If a selected Show ends in a version such as `v11` and the console has a higher version of the same name, Sound Backup asks before backing up. A declined version is saved in settings (`declinedNewerShows`, Show names only) so it isn't offered again.
+- **QLab without Bonjour.** Discovery also probes the local IPv4 subnet on TCP 53000 and lists a host only after it answers OSC `/workspaces`; Settings → QLab can connect by IP address.
+- **Clearer remote QLab error.** When macOS privacy protection on the QLab Mac blocks Remote Login access to the project folder, the error explains the Remote Login full-disk-access setting.
+
+Re-ran the checks for 0.3.0. Gitleaks found no leaks in Git history. In the working files it flagged only the nine known `muda` `.rmeta` documentation examples in ignored build output. TruffleHog reported zero findings in Git history. `npm audit` reported zero vulnerabilities, and `cargo audit` reported the same seven allowed upstream warnings. The app bundle's ad-hoc signature and the DMG checksum were verified. The executable contains no `/Users/` paths, and its only Gitleaks match is the known libssh2 error text. New test fixtures use Show naming patterns from a real console with personal names removed.
 
 ## What changed in 0.2.0
 
@@ -39,4 +48,4 @@ This is a publication/privacy review and targeted security review, not an indepe
 
 The DMG is an Apple silicon preview build, ad-hoc signed and not Apple-notarized. macOS may require approval through Privacy & Security on first launch. No trusted Developer ID distribution certificate was available.
 
-Avantis still needs physical-console validation, and remote QLab transfers need a second Mac. Mic-Wise and SLink-Rack use unauthenticated LAN HTTP APIs; QLab OSC is also not encrypted. Use the app on a trusted production network. QLab archives its workspace directory; externally referenced media is not collected. HTTP download failures may leave an incomplete archive file; check the app's success result before relying on a backup.
+Avantis Show listing and download are verified on one physical console; the lost-comms keepalive and AH-Net v2 negotiation are not (that console used v1). Remote QLab has connected to a second Mac, but its first transfer was blocked by macOS privacy protection on the project folder, so a complete remote transfer is still unverified. Mic-Wise and SLink-Rack use unauthenticated LAN HTTP APIs; QLab OSC is also not encrypted. Use the app on a trusted production network. QLab archives its workspace directory; externally referenced media is not collected. HTTP download failures may leave an incomplete archive file; check the app's success result before relying on a backup.

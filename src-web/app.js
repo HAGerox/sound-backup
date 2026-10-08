@@ -7,7 +7,7 @@ const emptyRemote = () => ({
 const emptySettings = () => ({
   backupFolder: '',
   devices: {
-    avantis: { endpoint: '', selectedShows: [] },
+    avantis: { endpoint: '', selectedShows: [], declinedNewerShows: [] },
     qlab: {
       instance: { host: '', address: '', hostname: '', name: '', oscPort: 53000, local: false },
       remote: emptyRemote(),
@@ -51,6 +51,9 @@ const elements = {
   showToolbar: $('#showToolbar'), showSearch: $('#showSearch'),
   selectAllShowsButton: $('#selectAllShowsButton'), showStatus: $('#showStatus'),
   showChoices: $('#showChoices'), showCountText: $('#showCountText'),
+  newerShowDialog: $('#newerShowDialog'), newerShowTitle: $('#newerShowTitle'),
+  newerShowList: $('#newerShowList'), newerShowKeepButton: $('#newerShowKeepButton'),
+  newerShowUseButton: $('#newerShowUseButton'),
   qlabIndicator: $('#qlabIndicator'), qlabIndicatorStatus: $('#qlabIndicatorStatus'),
   qlabSettingsCard: $('#qlabSettingsCard'), qlabDiscoverButton: $('#qlabDiscoverButton'),
   qlabDiscoverButtonLabel: $('#qlabDiscoverButtonLabel'), qlabDiscoveryStatus: $('#qlabDiscoveryStatus'),
@@ -93,6 +96,8 @@ let saveTimer;
 let toastTimer;
 let hasAutoScanned = false;
 let connectionCheckPromise;
+let newerShowPrompt;
+let answerNewerShowDialog = () => {};
 
 function normaliseRemote(stored) {
   return {
@@ -111,6 +116,8 @@ function normaliseSettings(stored) {
   next.devices.avantis.endpoint = String(stored?.devices?.avantis?.endpoint || '');
   next.devices.avantis.selectedShows = Array.isArray(stored?.devices?.avantis?.selectedShows)
     ? stored.devices.avantis.selectedShows.map(String) : [];
+  next.devices.avantis.declinedNewerShows = Array.isArray(stored?.devices?.avantis?.declinedNewerShows)
+    ? stored.devices.avantis.declinedNewerShows.map(String) : [];
   const storedQLabHost = String(stored?.devices?.qlab?.instance?.host || '');
   const storedQLabLocal = Boolean(stored?.devices?.qlab?.instance?.local);
   next.devices.qlab.instance = {
@@ -566,6 +573,8 @@ async function connectManualAddress() {
 
 async function refreshShows(options = {}) {
   const endpoint = settings.devices.avantis.endpoint; if (!endpoint || busy.shows) return;
+  // Taken before missing Shows are dropped, so a deleted v11 can still lead to its v12.
+  const previousSelection = selectedShows(); let loaded = false;
   busy.shows = true; setProviderState('avantis', 'checking'); elements.refreshShowsButton.disabled = true;
   elements.showSettings.hidden = false; setInlineStatus(elements.showStatus, 'Loading Shows…'); renderShows();
   try {
@@ -573,6 +582,8 @@ async function refreshShows(options = {}) {
     availableShows = Array.isArray(shows) ? shows : [];
     const names = new Map(availableShows.map(show => [show.name.toLocaleLowerCase(), show.name]));
     settings.devices.avantis.selectedShows = selectedShows().map(name => names.get(name.toLocaleLowerCase())).filter(Boolean);
+    settings.devices.avantis.declinedNewerShows = settings.devices.avantis.declinedNewerShows.filter(name => names.has(name.toLocaleLowerCase()));
+    loaded = true;
     setProviderState('avantis', 'connected'); setInlineStatus(elements.showStatus, ''); await saveSettingsNow();
   } catch (error) {
     availableShows = []; setProviderState('avantis', 'offline');
@@ -581,6 +592,76 @@ async function refreshShows(options = {}) {
   } finally {
     busy.shows = false; elements.refreshShowsButton.disabled = false; renderSettings();
   }
+  if (loaded) return offerNewerShows(previousSelection);
+}
+
+// "2026 Addams v11" → { family: '2026 addams', version: 11 }. Names without a trailing vN have no family.
+function showVersion(name) {
+  const match = /^(.*\S)[\s_-]+v(\d+)$/i.exec(String(name).trim());
+  return match ? { family: match[1].toLocaleLowerCase(), version: Number(match[2]) } : null;
+}
+
+// For each family among the given names, the newest Show on the console when it is newer than the
+// newest one selected, is not already selected, and has not been declined before.
+function newerShowVersions(names = selectedShows()) {
+  const selected = new Set(selectedShows().map(name => name.toLocaleLowerCase()));
+  const declined = new Set(settings.devices.avantis.declinedNewerShows.map(name => name.toLocaleLowerCase()));
+  const current = new Map();
+  for (const name of names) {
+    const parsed = showVersion(name);
+    if (parsed && !(current.get(parsed.family)?.version >= parsed.version)) current.set(parsed.family, { name, version: parsed.version });
+  }
+  const offers = [];
+  for (const [family, mine] of current) {
+    let newest = mine;
+    for (const show of availableShows) {
+      const parsed = showVersion(show.name);
+      if (parsed?.family === family && parsed.version > newest.version) newest = { name: show.name, version: parsed.version };
+    }
+    const key = newest.name.toLocaleLowerCase();
+    if (newest !== mine && !selected.has(key) && !declined.has(key)) offers.push({ current: mine.name, newer: newest.name });
+  }
+  return offers;
+}
+
+function offerNewerShows(names) {
+  if (newerShowPrompt) return newerShowPrompt;
+  const offers = newerShowVersions(names);
+  if (!offers.length) return Promise.resolve(false);
+  newerShowPrompt = askAboutNewerShows(offers).finally(() => { newerShowPrompt = undefined; });
+  return newerShowPrompt;
+}
+
+// Switching replaces the older selection; keeping remembers the answer so that Show isn't offered
+// again (a later version still is).
+async function askAboutNewerShows(offers) {
+  const single = offers.length === 1;
+  elements.newerShowTitle.textContent = single ? 'A newer Show is on the Avantis' : 'Newer Shows are on the Avantis';
+  elements.newerShowList.replaceChildren(...offers.map(offer => {
+    const item = document.createElement('li');
+    const current = document.createElement('span'); current.textContent = offer.current;
+    const arrow = document.createElement('i'); arrow.className = 'fa-solid fa-arrow-right'; arrow.setAttribute('aria-label', 'newer version');
+    const newer = document.createElement('strong'); newer.textContent = offer.newer;
+    item.append(current, arrow, newer); return item;
+  }));
+  elements.newerShowKeepButton.textContent = single ? `Keep ${offers[0].current}` : 'Keep current Shows';
+  elements.newerShowUseButton.textContent = single ? `Use ${offers[0].newer}` : 'Use newer Shows';
+  const answer = new Promise(resolve => { answerNewerShowDialog = resolve; });
+  elements.newerShowDialog.showModal();
+  const useNewer = await answer;
+  answerNewerShowDialog = () => {};
+  if (elements.newerShowDialog.open) elements.newerShowDialog.close();
+
+  const avantis = settings.devices.avantis;
+  if (useNewer) {
+    const replaced = new Set(offers.map(offer => offer.current.toLocaleLowerCase()));
+    avantis.selectedShows = [...selectedShows().filter(name => !replaced.has(name.toLocaleLowerCase())), ...offers.map(offer => offer.newer)];
+  } else {
+    avantis.declinedNewerShows = [...avantis.declinedNewerShows, ...offers.map(offer => offer.newer)];
+  }
+  renderShows(); renderHomeSummary();
+  try { await saveSettingsNow(); } catch (error) { showToast('Couldn’t save Settings', String(error), 'error'); }
+  return useNewer;
 }
 
 function toggleShow(name, checked) {
@@ -838,6 +919,11 @@ async function runBackup() {
   if (issue?.target === 'location') return chooseFolder();
   if (issue) return showView('settings', issue.target);
   elements.backupButton.disabled = true;
+  if (settings.devices.avantis.endpoint) {
+    // Re-read the console's Shows so a version stored since the list loaded is offered first.
+    await refreshShows({ silent: true });
+    await offerNewerShows(selectedShows());
+  }
   await checkConnections({ force: true });
   const connected = new Set(connectedProviders());
   if (!connected.size) {
@@ -909,6 +995,9 @@ elements.manualAddress.addEventListener('keydown', event => { if (event.key === 
 elements.refreshShowsButton.addEventListener('click', () => refreshShows());
 elements.showSearch.addEventListener('input', renderShows);
 elements.selectAllShowsButton.addEventListener('click', toggleAllShows);
+elements.newerShowUseButton.addEventListener('click', () => answerNewerShowDialog(true));
+elements.newerShowKeepButton.addEventListener('click', () => answerNewerShowDialog(false));
+elements.newerShowDialog.addEventListener('cancel', () => answerNewerShowDialog(false));
 elements.qlabDiscoverButton.addEventListener('click', discoverQLab);
 elements.qlabManualConnectButton.addEventListener('click', connectQLabAddress);
 elements.qlabAddress.addEventListener('keydown', event => { if (event.key === 'Enter') connectQLabAddress(); });
@@ -934,7 +1023,7 @@ for (const provider of Object.keys(PROVIDERS)) {
 }
 elements.backupButton.addEventListener('click', runBackup);
 elements.toastCloseButton.addEventListener('click', () => { elements.toast.hidden = true; });
-document.addEventListener('keydown', event => { if (event.key === 'Escape' && !elements.settingsView.hidden) showView('home'); });
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && !elements.settingsView.hidden && !elements.newerShowDialog.open) showView('home'); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkConnections({ force: true }); });
 
 function listenToBackend() {

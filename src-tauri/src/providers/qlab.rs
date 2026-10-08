@@ -338,8 +338,7 @@ fn remote_bundle(session: &ssh2::Session, base_path: &str, output: &Path) -> Res
         shell_quote(base_path),
         shell_quote(&remote_archive)
     );
-    remote::run(session, &command)
-        .map_err(|error| format!("QLab’s project folder could not be bundled: {error}"))?;
+    remote::run(session, &command).map_err(|error| remote_bundle_error(&error))?;
     let transfer = remote::download(session, &remote_archive, output);
     let _ = remote::run(
         session,
@@ -351,6 +350,16 @@ fn remote_bundle(session: &ssh2::Session, base_path: &str, output: &Path) -> Res
             let _ = fs::remove_file(output);
             Err(error)
         }
+    }
+}
+
+fn remote_bundle_error(error: &str) -> String {
+    // macOS privacy protection refuses Remote Login access to Desktop, Documents, Downloads and
+    // similar folders, even for their owner, unless full disk access is allowed for remote users.
+    if error.contains("Operation not permitted") {
+        "The QLab Mac blocked access to the project folder. On that Mac, open System Settings → General → Sharing, click ⓘ next to Remote Login and turn on “Allow full disk access for remote users”. Or move the QLab project out of Desktop, Documents or Downloads.".to_string()
+    } else {
+        format!("QLab’s project folder could not be bundled: {error}")
     }
 }
 
@@ -681,6 +690,18 @@ mod tests {
         println!(
             "Found {} with workspaces {:?}",
             instance.host, instance.workspace_names
+        );
+    }
+
+    #[test]
+    fn explains_remote_privacy_blocks() {
+        let blocked = remote_bundle_error(
+            "ditto: /Users/operator/Desktop/Show/QLab/Show: Operation not permitted",
+        );
+        assert!(blocked.contains("Allow full disk access for remote users"));
+        assert_eq!(
+            remote_bundle_error("No space left on device"),
+            "QLab’s project folder could not be bundled: No space left on device"
         );
     }
 

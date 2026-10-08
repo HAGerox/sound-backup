@@ -61,14 +61,16 @@ Multiple selected Shows are downloaded sequentially through one AH-Net session. 
 
 ## File transfer
 
-The Show sender uses the Director dual-transfer functions observed as:
+The Show sender uses these functions, confirmed against a real Avantis on 2026-10-08 (an earlier build had `0x0112` and `0x0113` swapped and failed with "Show data before its file header"):
 
-- `0x0113`: header / first payload
-- `0x0112`: subsequent payload
-- `0x0002`: receiver ACK
+- `0x0112`: header / first payload
+- `0x0113`: subsequent payload
+- `0x0002`: receiver ACK (the console waits for it before each next packet)
 - `0x0003`: receiver error
 
-The `0x0113` payload begins:
+The sender is a new object for each transfer (for example `0x1CBE`, then `0x1CBF`), so replies go to the message's source rather than the Show File Manager.
+
+The `0x0112` payload begins:
 
 ```text
 0x00  u16 BE  header length

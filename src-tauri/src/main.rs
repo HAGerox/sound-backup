@@ -10,6 +10,8 @@ use tauri_plugin_dialog::DialogExt;
 struct AvantisSettings {
     endpoint: String,
     selected_shows: Vec<String>,
+    /// Newer Show versions the user chose not to switch to, so they are not offered again.
+    declined_newer_shows: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -743,6 +745,20 @@ mod tests {
             vec!["Sunday".to_string()]
         );
         assert_eq!(settings.devices.qlab.instance.osc_port, 53000);
+    }
+
+    #[test]
+    fn keeps_declined_newer_shows_across_restarts() {
+        let settings = decode_settings(
+            r#"{"devices":{"avantis":{"endpoint":"192.168.1.109","selectedShows":["2026 Addams v11"],"declinedNewerShows":["2026 Addams v12"]}}}"#,
+        )
+        .unwrap();
+        let saved = serde_json::to_string(&settings).unwrap();
+        let reloaded = decode_settings(&saved).unwrap();
+        assert_eq!(
+            reloaded.devices.avantis.declined_newer_shows,
+            vec!["2026 Addams v12".to_string()]
+        );
     }
 
     #[test]

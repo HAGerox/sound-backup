@@ -25,8 +25,10 @@ const SHOW_MANAGER_SYNC: u16 = 0x100;
 const SHOW_ADDED: u16 = 0x1001;
 const SHOW_SYNC_READY: u16 = 0x100C;
 const SHOW_UPLOAD_TO_CONNECTION: u16 = 0x118;
-const FILE_BODY: u16 = 0x112;
-const FILE_HEADER: u16 = 0x113;
+// Confirmed on a real Avantis (2026-10-08): the header rides in the first packet,
+// sent as 0x0112, and every later packet is 0x0113.
+const FILE_FIRST: u16 = 0x112;
+const FILE_NEXT: u16 = 0x113;
 const FILE_ACK: u16 = 2;
 const FILE_ERROR: u16 = 3;
 const MAX_SHOW_BYTES: u64 = 2 * 1024 * 1024 * 1024;
@@ -407,14 +409,14 @@ impl Session {
         let transfer_result = (|| -> Result<()> {
             while Instant::now() < deadline {
                 let received = self.recv_net_until(deadline)?;
-                if !matches!(received.message.function, FILE_HEADER | FILE_BODY) {
+                if !matches!(received.message.function, FILE_FIRST | FILE_NEXT) {
                     continue;
                 }
                 if file_sender.is_some_and(|source| source != received.message.source) {
                     continue;
                 }
 
-                let packet_result = if received.message.function == FILE_HEADER {
+                let packet_result = if received.message.function == FILE_FIRST {
                     if temp_file.is_some() {
                         Err(BackupError::Protocol(
                             "Avantis sent more than one Show file header.".into(),

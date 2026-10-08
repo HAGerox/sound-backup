@@ -1,6 +1,6 @@
 # Sound Backup
 
-[Download for macOS](https://apps.finnstanley.com/sound-backup/) — Apple silicon, macOS 11+. Version 0.2.0 is an unsigned preview; see the release notes for first-launch instructions and hardware validation limits.
+[Download for macOS](https://apps.finnstanley.com/sound-backup/) — Apple silicon, macOS 11+. Version 0.3.0 is an unsigned preview; see the release notes for first-launch instructions and hardware validation limits.
 
 A small macOS-first Tauri app for one-click backups of live-production systems: Allen & Heath Avantis, QLab, Mic-Wise and SLink-Rack.
 
@@ -104,9 +104,9 @@ node scripts/build.mjs
 
 ## Hardware validation status
 
-The Avantis implementation was derived for interoperability from the user-supplied Avantis Director V2.01 application. The protocol path and file layout have unit/integration coverage, including a mock console, but this environment does not contain a physical Avantis. The first real-console run should therefore be treated as hardware validation, particularly for AH-Net routing details that are not publicly documented by Allen & Heath.
+The Avantis implementation was derived for interoperability from the user-supplied Avantis Director V2.01 application. Since 0.3.0 it has been run against a physical Avantis: listing User Shows and downloading single and multiple Shows works, and the mock console now matches the captured traffic. The lost-comms keepalive and AH-Net v2 negotiation remain unverified (that console used v1).
 
-The local QLab integration test has queried a real open QLab 5 workspace over OSC/TCP. Remote Login authentication, transfer, and host-key pinning are covered structurally but still need validation against a second Mac on the target production network.
+The local QLab integration test has queried a real open QLab 5 workspace over OSC/TCP. Remote Login has connected to a second Mac on a production network. Its first transfer was blocked by macOS privacy protection because the project was on the Desktop. On the QLab Mac, turn on **Allow full disk access for remote users** under System Settings → General → Sharing → Remote Login (ⓘ), or keep the project outside Desktop, Documents and Downloads. A complete remote transfer is still to be confirmed.
 
 Avantis protocol steps (connection, message headers and Show names, but never Show data) are logged to `~/Library/Logs/uk.stagebackup.desktop/avantis.log`. Set `STAGE_BACKUP_TRACE=1` before launching from a terminal to also print them. Automatic discovery also depends on the Mac and Avantis being reachable on the same local IPv4 network; routed or firewalled networks may require the manual address fallback.
 

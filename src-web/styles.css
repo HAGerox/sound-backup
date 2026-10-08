@@ -252,6 +252,18 @@ input::placeholder { color: var(--faint); }
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
 
+.newer-show-dialog { width: min(420px, calc(100% - 44px)); padding: 20px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.newer-show-dialog::backdrop { background: rgba(0, 0, 0, 0.28); backdrop-filter: blur(2px); }
+.newer-show-dialog h2 { margin: 0 0 4px; font-size: 15px; font-weight: 700; }
+.newer-show-dialog p { margin: 0; color: var(--muted); font-size: 12px; }
+.newer-show-list { display: grid; gap: 6px; margin: 14px 0 18px; padding: 0; list-style: none; }
+.newer-show-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-secondary); font-size: 13px; }
+.newer-show-list li span { color: var(--muted); }
+.newer-show-list li i { color: var(--faint); font-size: 11px; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.primary-button { display: inline-flex; align-items: center; justify-content: center; min-height: 34px; padding: 0 14px; border: 1px solid var(--accent); border-radius: 9px; background: var(--accent); color: var(--accent-contrast); font-size: 12px; font-weight: 650; }
+.primary-button:hover { opacity: 0.88; }
+
 @media (prefers-color-scheme: dark) {
   :root {
     --surface: #242427;

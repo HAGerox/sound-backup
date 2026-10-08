@@ -175,26 +175,31 @@ fn mock_console_batch(listener: TcpListener) {
     }
 }
 
+/// Matches a real Avantis (captured 2026-10-08): the header and first bytes arrive as 0x0112,
+/// then each remaining packet as 0x0113, and each one waits for the receiver's ACK.
 fn send_archive(stream: &mut TcpStream, show_name: &str) {
     let archive = fixture_archive();
     let name = format!("{show_name}.tar.gz\0");
     let header_len = 8 + name.len();
-    let split = 12usize;
+    let (first, rest) = archive.split_at(12);
+    let (second, third) = rest.split_at(rest.len() / 2);
     let mut header = Vec::new();
     header.extend_from_slice(&(header_len as u16).to_be_bytes());
-    header.extend_from_slice(&2u16.to_be_bytes());
+    header.extend_from_slice(&3u16.to_be_bytes());
     header.extend_from_slice(&(archive.len() as u32).to_be_bytes());
     header.extend_from_slice(name.as_bytes());
-    header.extend_from_slice(&archive[..split]);
-    write_net(stream, file_msg(0x113, header));
-    let ack1 = decode_net(&read_frame(stream));
-    assert_eq!(ack1.function, 2);
-    assert_eq!(ack1.target, SERVER_FILE_SENDER);
+    header.extend_from_slice(first);
 
-    write_net(stream, file_msg(0x112, archive[split..].to_vec()));
-    let ack2 = decode_net(&read_frame(stream));
-    assert_eq!(ack2.function, 2);
-    assert_eq!(ack2.target, SERVER_FILE_SENDER);
+    for (function, payload) in [
+        (0x112, header),
+        (0x113, second.to_vec()),
+        (0x113, third.to_vec()),
+    ] {
+        write_net(stream, file_msg(function, payload));
+        let ack = decode_net(&read_frame(stream));
+        assert_eq!(ack.function, 2);
+        assert_eq!(ack.target, SERVER_FILE_SENDER);
+    }
 }
 
 fn cstring(bytes: &[u8]) -> String {
