@@ -1,4 +1,5 @@
 use super::{
+    net_scan,
     remote::{self, Connection},
     util::{dated_path, shell_quote, temporary_remote_path},
 };
@@ -46,7 +47,7 @@ pub struct BackupOutcome {
     pub workspace_name: String,
 }
 
-pub fn discover() -> Result<Vec<Instance>, String> {
+fn discover_bonjour() -> Result<BTreeMap<String, Instance>, String> {
     let daemon =
         ServiceDaemon::new().map_err(|error| format!("Bonjour could not start: {error}"))?;
     let receiver = daemon
@@ -91,24 +92,21 @@ pub fn discover() -> Result<Vec<Instance>, String> {
     let _ = daemon.stop_browse("_qlab._tcp.local.");
     let _ = daemon.shutdown();
 
-    if found.is_empty() {
-        if let Ok(workspaces) = list_workspaces("127.0.0.1", 53000) {
-            if !workspaces.is_empty() {
-                found.insert(
-                    "127.0.0.1:53000".to_string(),
-                    Instance {
-                        host: "127.0.0.1".to_string(),
-                        address: preferred_local_address(),
-                        hostname: computer_hostname(),
-                        name: "QLab on this Mac".to_string(),
-                        osc_port: 53000,
-                        local: true,
-                        workspace_names: workspaces
-                            .iter()
-                            .map(|workspace| workspace.name.clone())
-                            .collect(),
-                    },
-                );
+    Ok(found)
+}
+
+pub fn discover() -> Result<Vec<Instance>, String> {
+    // Bonjour may be unavailable or filtered while direct OSC still works.
+    let mut found = discover_bonjour().unwrap_or_default();
+    if let Ok(instance) = probe_instance("127.0.0.1", 53000) {
+        found.entry("local:53000".to_string()).or_insert(instance);
+    }
+    for address in net_scan::open_listeners(53000) {
+        let host = address.ip().to_string();
+        let key = format!("{host}:{}", address.port());
+        if !found.contains_key(&key) {
+            if let Ok(instance) = probe_instance(&host, address.port()) {
+                found.insert(key, instance);
             }
         }
     }
@@ -123,6 +121,40 @@ pub fn discover() -> Result<Vec<Instance>, String> {
         }
     }
     Ok(instances)
+}
+
+fn probe_instance(host: &str, port: u16) -> Result<Instance, String> {
+    // An open TCP port alone is not evidence of QLab: require an OSC reply.
+    let workspaces = list_workspaces(host, port)?;
+    let local = is_local_address(host);
+    Ok(Instance {
+        host: if local {
+            "127.0.0.1".to_string()
+        } else {
+            host.to_string()
+        },
+        address: if local {
+            preferred_local_address()
+        } else {
+            host.to_string()
+        },
+        hostname: if local {
+            computer_hostname()
+        } else {
+            String::new()
+        },
+        name: if local {
+            "QLab on this Mac".to_string()
+        } else {
+            format!("QLab at {host}")
+        },
+        osc_port: port_or_default(port),
+        local,
+        workspace_names: workspaces
+            .into_iter()
+            .map(|workspace| workspace.name)
+            .collect(),
+    })
 }
 
 pub fn list_workspaces(host: &str, port: u16) -> Result<Vec<Workspace>, String> {
@@ -582,6 +614,73 @@ mod tests {
         assert_eq!(
             slip_encode(&bytes),
             [0xc0, 0x2f, 0xdb, 0xdc, 0xdb, 0xdd, 0x00, 0xc0]
+        );
+    }
+
+    #[test]
+    fn identifies_a_direct_listener_only_after_a_valid_workspace_reply() {
+        use std::net::TcpListener;
+        for (json, accepted) in [
+            (
+                r#"{"status":"ok","data":[{"uniqueID":"w1","displayName":"Show","port":53000}]}"#,
+                true,
+            ),
+            (r#"{"status":"ok","data":[]}"#, true),
+            (r#"{"status":"error"}"#, false),
+        ] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let server = thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                let request = slip_read(&mut stream).unwrap();
+                let (_, request) = decoder::decode_udp(&request).unwrap();
+                assert!(
+                    matches!(request, OscPacket::Message(message) if message.addr == "/workspaces" && message.args.is_empty())
+                );
+                let reply = encoder::encode(&OscPacket::Message(OscMessage {
+                    addr: "/reply/workspaces".to_string(),
+                    args: vec![OscType::String(json.to_string())],
+                }))
+                .unwrap();
+                stream.write_all(&slip_encode(&reply)).unwrap();
+            });
+            let result = probe_instance("127.0.0.1", port);
+            server.join().unwrap();
+            assert_eq!(result.is_ok(), accepted);
+            if let Ok(instance) = result {
+                assert!(instance.local);
+                assert_eq!(instance.osc_port, port);
+                if json.contains("w1") {
+                    assert_eq!(instance.workspace_names, vec!["Show"]);
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "requires a live QLab host specified by QLAB_TEST_HOST on this network"]
+    fn discovers_network_qlab_without_bonjour() {
+        let host = std::env::var("QLAB_TEST_HOST").expect("set QLAB_TEST_HOST");
+        let expected = list_workspaces(&host, 53000).unwrap();
+        let instances = discover().unwrap();
+        let instance = instances
+            .iter()
+            .find(|instance| instance.host == host)
+            .expect("the subnet scan should find the live QLab host");
+        assert!(!instance.local);
+        assert_eq!(
+            instance.workspace_names,
+            expected
+                .into_iter()
+                .map(|workspace| workspace.name)
+                .collect::<Vec<_>>()
+        );
+        println!(
+            "Found {} with workspaces {:?}",
+            instance.host, instance.workspace_names
         );
     }
 

@@ -185,6 +185,15 @@
                 <div id="qlabInstanceChoices" class="choice-list" role="radiogroup" aria-label="Open QLab projects"></div>
                 <div id="qlabWorkspaceStatus" class="inline-status" aria-live="polite"></div>
 
+                <details class="manual-settings">
+                  <summary>Connect by IP address</summary>
+                  <div class="manual-address-row">
+                    <label class="sr-only" for="qlabAddress">QLab Mac address</label>
+                    <input id="qlabAddress" autocomplete="off" inputmode="url" placeholder="Enter its IP address" />
+                    <button id="qlabManualConnectButton" class="secondary-button" type="button">Connect</button>
+                  </div>
+                </details>
+
                 <div id="qlabPasscodePanel" class="remote-login" hidden>
                   <div class="login-heading"><h3>OSC access</h3></div>
                   <div class="single-credential-row">

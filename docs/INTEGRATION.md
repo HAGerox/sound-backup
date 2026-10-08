@@ -40,6 +40,14 @@ firewalled networks.
 | Mic-Wise | `_micwise._tcp.local.` | `8000` | `GET /api/health` |
 | SLink-Rack | `_slink-rack._tcp.local.` | `8080` | `GET /api/identity` |
 
+QLab also probes the local IPv4 subnet on TCP 53000 when Bonjour is missing
+or filtered. A listener is included only after it answers OSC `/workspaces`;
+this works independently of Bonjour and still includes QLab with no open
+workspaces. The local loopback check runs alongside network discovery. In
+Settings → QLab, **Connect by IP address** provides access to routed hosts
+outside the bounded subnet scan. File backups from a remote Mac still require
+Remote Login and its macOS account credentials.
+
 ## HTTP service contract (Mic-Wise, SLink-Rack)
 
 Both are plain-HTTP LAN services with no authentication. Sound Backup's client

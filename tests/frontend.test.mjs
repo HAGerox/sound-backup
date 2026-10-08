@@ -91,3 +91,27 @@ test('a failed Show refresh reports the console error instead of a generic messa
   assert.equal(vm.runInContext('elements.showStatus.textContent', context), 'Timed out during the AH-Net connection handshake.');
   assert.equal(vm.runInContext('states.avantis', context), 'offline');
 });
+
+
+test('a failed manual QLab connection preserves the saved host and login', async () => {
+  const context = frontend(async () => { throw 'QLab did not respond'; });
+  vm.runInContext("elements.qlabAddress.value = '10.10.160.121'", context);
+  await vm.runInContext('connectQLabAddress()', context);
+  assert.equal(vm.runInContext('settings.devices.qlab.instance.host', context), 'qlab.example');
+  assert.equal(vm.runInContext('settings.devices.qlab.remote.fingerprint', context), 'pinned-host');
+  assert.equal(vm.runInContext('elements.qlabDiscoveryStatus.textContent', context), 'QLab did not respond');
+  assert.equal(vm.runInContext('elements.qlabManualConnectButton.disabled', context), false);
+});
+
+test('manual QLab connection lists the remote workspace and requests file access', async () => {
+  const context = frontend(async command => {
+    if (command === 'load_qlab_workspaces') return [{ id: 'w1', name: 'Show', port: 53000, version: '5' }];
+  });
+  vm.runInContext("elements.qlabAddress.value = '10.10.160.121'", context);
+  await vm.runInContext('connectQLabAddress()', context);
+  assert.equal(vm.runInContext('settings.devices.qlab.instance.host', context), '10.10.160.121');
+  assert.equal(vm.runInContext('settings.devices.qlab.instance.local', context), false);
+  assert.equal(vm.runInContext('settings.devices.qlab.remote.fingerprint', context), '');
+  assert.equal(vm.runInContext('settings.devices.qlab.selectedWorkspaces[0].name', context), 'Show');
+  assert.equal(vm.runInContext('elements.qlabLogin.hidden', context), false);
+});

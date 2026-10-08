@@ -54,6 +54,7 @@ const elements = {
   qlabIndicator: $('#qlabIndicator'), qlabIndicatorStatus: $('#qlabIndicatorStatus'),
   qlabSettingsCard: $('#qlabSettingsCard'), qlabDiscoverButton: $('#qlabDiscoverButton'),
   qlabDiscoverButtonLabel: $('#qlabDiscoverButtonLabel'), qlabDiscoveryStatus: $('#qlabDiscoveryStatus'),
+  qlabAddress: $('#qlabAddress'), qlabManualConnectButton: $('#qlabManualConnectButton'),
   qlabInstanceChoices: $('#qlabInstanceChoices'), qlabWorkspaceStatus: $('#qlabWorkspaceStatus'),
   qlabPasscodePanel: $('#qlabPasscodePanel'), qlabPasscode: $('#qlabPasscode'),
   qlabUnlockButton: $('#qlabUnlockButton'), qlabLogin: $('#qlabLogin'),
@@ -601,7 +602,7 @@ async function discoverQLab() {
   try {
     const instances = await invoke('discover_qlab'); discoveredQLab = Array.isArray(instances) ? instances : []; renderQLab();
     if (!discoveredQLab.length) {
-      setInlineStatus(elements.qlabDiscoveryStatus, 'Open QLab and enable OSC access, then scan again.');
+      setInlineStatus(elements.qlabDiscoveryStatus, 'No QLab found. Connect by IP address, or check that QLab is open and OSC access is enabled.');
       if (!settings.devices.qlab.instance.host) setProviderState('qlab', 'not-configured');
     } else {
       setInlineStatus(elements.qlabDiscoveryStatus, '');
@@ -612,6 +613,30 @@ async function discoverQLab() {
     if (!settings.devices.qlab.instance.host) setProviderState('qlab', 'not-configured');
   } finally {
     busy.qlabScan = false; elements.qlabDiscoverButton.disabled = false; elements.qlabDiscoverButtonLabel.textContent = 'Scan again';
+  }
+}
+
+async function connectQLabAddress() {
+  const host = elements.qlabAddress.value.trim();
+  if (!host || busy.qlabScan || busy.qlab) return;
+  elements.qlabManualConnectButton.disabled = true;
+  setInlineStatus(elements.qlabDiscoveryStatus, 'Looking for QLab…');
+  try {
+    // Verify before replacing the saved connection or its login details.
+    const workspaces = await invoke('load_qlab_workspaces', { input: { host, oscPort: 53000 } });
+    const instance = {
+      host, address: host, name: `QLab at ${host}`, oscPort: 53000,
+      local: ['127.0.0.1', 'localhost'].includes(host.toLowerCase()),
+      workspaceNames: workspaces.map(workspace => workspace.name)
+    };
+    discoveredQLab = discoveredQLab.filter(item => !sameQLab(item, instance));
+    discoveredQLab.push(instance);
+    await selectQLab(instance);
+    setInlineStatus(elements.qlabDiscoveryStatus, '');
+  } catch (error) {
+    setInlineStatus(elements.qlabDiscoveryStatus, String(error), 'error');
+  } finally {
+    elements.qlabManualConnectButton.disabled = false;
   }
 }
 
@@ -885,6 +910,8 @@ elements.refreshShowsButton.addEventListener('click', () => refreshShows());
 elements.showSearch.addEventListener('input', renderShows);
 elements.selectAllShowsButton.addEventListener('click', toggleAllShows);
 elements.qlabDiscoverButton.addEventListener('click', discoverQLab);
+elements.qlabManualConnectButton.addEventListener('click', connectQLabAddress);
+elements.qlabAddress.addEventListener('keydown', event => { if (event.key === 'Enter') connectQLabAddress(); });
 elements.qlabRemoteLoginHelp.addEventListener('click', () => invoke('open_remote_login_settings'));
 elements.qlabUnlockButton.addEventListener('click', unlockQLab);
 elements.qlabPasscode.addEventListener('keydown', event => { if (event.key === 'Enter') unlockQLab(); });
