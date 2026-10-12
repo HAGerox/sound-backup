@@ -1,6 +1,6 @@
 # Sound Backup
 
-[Download for macOS](https://apps.finnstanley.com/sound-backup/) — Apple silicon, macOS 11+. Version 0.3.0 is an unsigned preview; see the release notes for first-launch instructions and hardware validation limits.
+[Download for macOS](https://apps.finnstanley.com/sound-backup/) — Apple silicon, macOS 11+. Version 0.3.1 is an unsigned preview; see the release notes for first-launch instructions and hardware validation limits.
 
 A small macOS-first Tauri app for one-click backups of live-production systems: Allen & Heath Avantis, QLab, Mic-Wise and SLink-Rack.
 
